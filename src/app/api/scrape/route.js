@@ -3,6 +3,8 @@ import connectToDatabase from '@/lib/mongodb';
 import ScrapeResult from '@/models/ScrapeResult';
 import { runScraper } from '@/lib/scraper';
 
+export const maxDuration = 60; // Allow Vercel to run up to 60s
+
 export async function POST(req) {
   try {
     const { url } = await req.json();
@@ -16,15 +18,10 @@ export async function POST(req) {
     const count = await ScrapeResult.countDocuments();
     const slug = `scraper${count + 1}`;
 
-    // Run scraper asynchronously or wait for it?
-    // Since Next.js API route has timeout limits (especially on Vercel),
-    // and Puppeteer might take time, we'll start it and return the slug immediately.
-    // The frontend can poll or just go to /scraper/[slug] which will show 'processing' state.
-    
-    // Start scraping in background
-    runScraper(url, slug).catch(console.error);
+    // Wait for the scraper to finish so Vercel doesn't kill the lambda
+    await runScraper(url, slug);
 
-    return NextResponse.json({ slug, message: 'Scraping started' });
+    return NextResponse.json({ slug, message: 'Scraping finished' });
 
   } catch (error) {
     console.error('Error in /api/scrape:', error);

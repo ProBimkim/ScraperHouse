@@ -350,20 +350,20 @@ export async function runScraper(url, slug) {
     status: 'processing',
   });
 
-  // Try Puppeteer first
-  let result = await scrapeWithPuppeteer(url);
+  // Try pure fetch first (fastest)
+  let result = await scrapeWithFetch(url);
 
-  // If Puppeteer failed (e.g. Chromium not available), try pure fetch
-  if (!result.success) {
-    const puppeteerErrors = result.steps || [];
-    const fetchResult = await scrapeWithFetch(url);
+  // If pure fetch failed or returned 0 questions (e.g. timed form), fallback to Puppeteer
+  if (!result.success || !result.questions || result.questions.length === 0) {
+    const fetchErrors = result.steps || [];
+    const puppeteerResult = await scrapeWithPuppeteer(url);
 
-    if (fetchResult.success) {
-      result = fetchResult;
-      result.steps = [...puppeteerErrors, { step: 'fallback_to_fetch', status: 'ok' }, ...fetchResult.steps];
+    if (puppeteerResult.success && puppeteerResult.questions && puppeteerResult.questions.length > 0) {
+      result = puppeteerResult;
+      result.steps = [...fetchErrors, { step: 'fallback_to_puppeteer', status: 'ok' }, ...puppeteerResult.steps];
     } else {
       // Both failed — log all errors
-      result.steps = [...puppeteerErrors, { step: 'fallback_to_fetch', status: 'failed' }, ...fetchResult.steps];
+      result.steps = [...fetchErrors, { step: 'fallback_to_puppeteer', status: 'failed' }, ...(puppeteerResult.steps || [])];
     }
   }
 
