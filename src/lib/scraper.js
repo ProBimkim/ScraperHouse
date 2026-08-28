@@ -34,7 +34,18 @@ function extractQuestions(formJson) {
     const required = Boolean(q.required || q.Required || q.isRequired);
 
     const choices = [];
-    const rawChoices = q.choices || q.Choices || [];
+    let rawChoices = q.choices || q.Choices || [];
+    
+    // Sometimes choices are in a stringified questionInfo JSON
+    if (rawChoices.length === 0 && q.questionInfo) {
+      try {
+        const parsedInfo = JSON.parse(q.questionInfo);
+        rawChoices = parsedInfo.Choices || parsedInfo.choices || [];
+      } catch (e) {
+        // ignore JSON parse error
+      }
+    }
+
     for (const c of rawChoices) {
       if (typeof c === 'object' && c !== null) {
         const text = c.displayText || c.description || c.Description || c.value;

@@ -1,7 +1,8 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Search, AlertTriangle, Zap } from 'lucide-react';
+import Image from 'next/image';
+import { Search, AlertTriangle } from 'lucide-react';
 
 export default function Navbar({ errorCount = 0 }) {
   const pathname = usePathname();
@@ -9,8 +10,8 @@ export default function Navbar({ errorCount = 0 }) {
   return (
     <nav className="navbar">
       <Link href="/" className="nav-brand" style={{ textDecoration: 'none' }}>
-        <div className="nav-brand-icon">
-          <Zap size={16} color="white" />
+        <div className="nav-brand-icon" style={{ background: 'transparent', padding: 0 }}>
+          <Image src="/logo.png" alt="Logo" width={24} height={24} className="object-contain" />
         </div>
         <span>FormScraper</span>
       </Link>
