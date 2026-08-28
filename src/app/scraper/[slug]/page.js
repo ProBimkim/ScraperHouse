@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, use } from 'react';
-import { ArrowLeft, Loader2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Search } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 
@@ -9,6 +9,7 @@ export default function ScraperResult({ params }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     let interval;
@@ -45,6 +46,11 @@ export default function ScraperResult({ params }) {
     };
     return `badge ${map[status] || ''}`;
   };
+
+  const filteredQuestions = data?.questions?.filter(q => 
+    q.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    q.choices?.some(c => c.toLowerCase().includes(searchQuery.toLowerCase()))
+  ) || [];
 
   if (error) {
     return (
@@ -144,34 +150,54 @@ export default function ScraperResult({ params }) {
           </details>
         )}
 
+        {/* Search Bar */}
+        {data?.questions?.length > 0 && (
+          <div className="glass-card" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', padding: '12px 24px' }}>
+            <Search size={18} color="var(--text-muted)" style={{ marginRight: '12px' }} />
+            <input 
+              type="text" 
+              placeholder="Cari soal atau pilihan ganda..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1rem', outline: 'none' }}
+            />
+          </div>
+        )}
+
         {/* Questions */}
         {data?.questions?.length > 0 ? (
-          data.questions.map((q, idx) => (
-            <div key={idx} className="glass-card question-card">
-              <div className="q-header">
-                <div className="q-title">
-                  <span className="q-number">{idx + 1}.</span>
-                  {q.title}
+          filteredQuestions.length > 0 ? (
+            filteredQuestions.map((q, idx) => (
+              <div key={idx} className="glass-card question-card">
+                <div className="q-header">
+                  <div className="q-title">
+                    <span className="q-number">{data.questions.indexOf(q) + 1}.</span>
+                    {q.title}
+                  </div>
+                  <div className="q-meta">
+                    <span className="q-tag q-tag-type">{q.type}</span>
+                    {q.required && <span className="q-tag q-tag-required">Required</span>}
+                  </div>
                 </div>
-                <div className="q-meta">
-                  <span className="q-tag q-tag-type">{q.type}</span>
-                  {q.required && <span className="q-tag q-tag-required">Required</span>}
-                </div>
+                {q.imageUrl && (
+                  <div style={{ margin: '16px 0' }}>
+                    <img src={q.imageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                  </div>
+                )}
+                {q.choices?.length > 0 && (
+                  <ul className="choice-list">
+                    {q.choices.map((c, ci) => (
+                      <li key={ci} className="choice-item">{c}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {q.imageUrl && (
-                <div style={{ margin: '16px 0' }}>
-                  <img src={q.imageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
-                </div>
-              )}
-              {q.choices?.length > 0 && (
-                <ul className="choice-list">
-                  {q.choices.map((c, ci) => (
-                    <li key={ci} className="choice-item">{c}</li>
-                  ))}
-                </ul>
-              )}
+            ))
+          ) : (
+            <div className="glass-card empty-state" style={{ padding: '30px' }}>
+              <div style={{ color: 'var(--text-muted)' }}>Tidak ada soal yang cocok dengan pencarian.</div>
             </div>
-          ))
+          )
         ) : data?.status !== 'processing' ? (
           <div className="glass-card empty-state">
             <div className="empty-state-icon">📝</div>
