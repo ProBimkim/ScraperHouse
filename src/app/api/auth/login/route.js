@@ -8,7 +8,8 @@ export async function POST(request) {
     const correctPassword = process.env.APP_PASSWORD || 'DEV_BIMKIM'
 
     if (keyword === correctPassword) {
-      cookies().set('auth_token', 'true', {
+      const cookieStore = await cookies()
+      cookieStore.set('auth_token', 'true', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         maxAge: 60 * 60 * 24 * 7, // 1 week
