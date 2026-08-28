@@ -124,7 +124,8 @@ async function scrapeWithPuppeteer(url) {
           const json = await response.json();
           // We only want the response that actually contains the questions, 
           // or if we haven't found any yet. Timed forms might return an empty one first.
-          if (!foundApiData || (json.questions && json.questions.length > 0)) {
+          const qList = json.questions || json.Questions || [];
+          if (!foundApiData || qList.length > 0) {
             foundApiData = json;
             foundApiUrl = respUrl;
           }
@@ -139,7 +140,8 @@ async function scrapeWithPuppeteer(url) {
     steps.push({ step: 'navigate', status: 'ok' });
 
     // Handle timed forms: click "Start" if present and questions are empty
-    let hasQuestions = foundApiData && foundApiData.questions && foundApiData.questions.length > 0;
+    const currentQList = foundApiData ? (foundApiData.questions || foundApiData.Questions || []) : [];
+    let hasQuestions = currentQList.length > 0;
     
     if (!hasQuestions) {
       steps.push({ step: 'check_timed_form', status: 'starting' });
@@ -162,15 +164,18 @@ async function scrapeWithPuppeteer(url) {
     }
 
     // If not intercepted yet, wait up to 10s more
-    if (!foundApiData || (!hasQuestions && foundApiData.questions?.length === 0)) {
+    let finalQList = foundApiData ? (foundApiData.questions || foundApiData.Questions || []) : [];
+    if (!foundApiData || (!hasQuestions && finalQList.length === 0)) {
       steps.push({ step: 'wait_for_api', status: 'waiting' });
-      for (let i = 0; i < 20 && !foundApiData; i++) {
+      for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 500));
+        finalQList = foundApiData ? (foundApiData.questions || foundApiData.Questions || []) : [];
+        if (finalQList.length > 0) break;
       }
     }
 
     // Fallback: extract prefetchFormUrl from HTML and fetch manually
-    if (!foundApiData) {
+    if (!foundApiData || finalQList.length === 0) {
       steps.push({ step: 'fallback_html_extract', status: 'starting' });
       const html = await page.content();
       const match = PREFETCH_URL_PATTERN.exec(html);
