@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, ChevronRight, Loader2, Clock, CheckCircle } from 'lucide-react';
+import { Search, ChevronRight, Loader2, Clock, CheckCircle, Trash2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 
 export default function Home() {
@@ -61,6 +61,25 @@ export default function Home() {
       setTimeout(() => setToast(null), 4000);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (e, slug) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this scraper result?')) return;
+    
+    try {
+      const res = await fetch(`/api/scraper/${slug}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchHistory();
+      } else {
+        const data = await res.json();
+        setToast(data.error || 'Failed to delete');
+        setTimeout(() => setToast(null), 4000);
+      }
+    } catch (err) {
+      setToast(err.message);
+      setTimeout(() => setToast(null), 4000);
     }
   };
 
@@ -125,8 +144,16 @@ export default function Home() {
                 onClick={() => router.push(`/scraper/${item.slug}`)}
               >
                 <div className="history-top-row">
-                  <div className="history-title">{item.title || item.url}</div>
-                  <ChevronRight size={16} color="var(--text-muted)" />
+                  <div className="history-title" style={{ flex: 1 }}>{item.title || item.url}</div>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    style={{ padding: '4px', color: 'var(--error)' }}
+                    onClick={(e) => handleDelete(e, item.slug)}
+                    title="Delete Result"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <ChevronRight size={16} color="var(--text-muted)" style={{ marginLeft: '8px' }} />
                 </div>
                 <div className="history-meta">
                   <span className={statusBadge(item.status)}>{item.status}</span>

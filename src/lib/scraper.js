@@ -371,10 +371,15 @@ export async function runScraper(url, slug) {
     resultDoc.rawApiResponse = result.rawApiResponse;
     resultDoc.status = 'success';
     resultDoc.scrapeSteps = result.steps;
-    await resultDoc.save();
-    return resultDoc;
   } else {
-    // Save to global error log for monitoring, but delete the scraper result itself
+    resultDoc.status = 'failed';
+    resultDoc.scrapeSteps = result.steps;
+    resultDoc.errors.push({
+      message: result.error || 'Unknown scraping error',
+      stack: result.stack || '',
+    });
+
+    // Save to global error log for monitoring
     await GlobalErrorLog.create({
       scrapeResultId: resultDoc._id,
       url,
@@ -388,8 +393,8 @@ export async function runScraper(url, slug) {
           step: s.step,
         })),
     });
-    
-    await ScrapeResult.findByIdAndDelete(resultDoc._id);
-    return null;
   }
+
+  await resultDoc.save();
+  return resultDoc;
 }
