@@ -55,12 +55,21 @@ function extractQuestions(formJson) {
       }
     }
 
+    // Extract image if present
+    let imageUrl = null;
+    if (q.image && q.image.resourceUrl) {
+      imageUrl = q.image.resourceUrl;
+    } else if (q.QuestionImage && q.QuestionImage.resourceUrl) {
+      imageUrl = q.QuestionImage.resourceUrl;
+    }
+
     normalized.push({
       id: q.id || q.Id,
       title,
       type: qtype,
       required,
       choices,
+      imageUrl,
     });
   }
   return normalized;

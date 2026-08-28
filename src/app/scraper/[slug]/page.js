@@ -158,6 +158,11 @@ export default function ScraperResult({ params }) {
                   {q.required && <span className="q-tag q-tag-required">Required</span>}
                 </div>
               </div>
+              {q.imageUrl && (
+                <div style={{ margin: '16px 0' }}>
+                  <img src={q.imageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                </div>
+              )}
               {q.choices?.length > 0 && (
                 <ul className="choice-list">
                   {q.choices.map((c, ci) => (
