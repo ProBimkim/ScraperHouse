@@ -1,7 +1,8 @@
-import puppeteer from 'puppeteer';
 import connectToDatabase from './mongodb';
 import ScrapeResult from '../models/ScrapeResult';
 import GlobalErrorLog from '../models/GlobalErrorLog';
+import chromium from '@sparticuz/chromium-min';
+import puppeteerCore from 'puppeteer-core';
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -86,15 +87,23 @@ async function scrapeWithPuppeteer(url) {
 
   try {
     steps.push({ step: 'launch_browser', status: 'starting' });
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    });
+
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd) {
+      const executablePath = await chromium.executablePath(
+        'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
+      );
+      browser = await puppeteerCore.launch({
+        args: chromium.args,
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+      });
+    } else {
+      const puppeteer = (await import('puppeteer')).default;
+      browser = await puppeteer.launch({ headless: 'new' });
+    }
+
     steps.push({ step: 'launch_browser', status: 'ok' });
 
     const page = await browser.newPage();
@@ -353,24 +362,19 @@ export async function runScraper(url, slug) {
     }
   }
 
-  if (result.success) {
+  if (result.success && result.questions && result.questions.length > 0) {
     resultDoc.apiUrl = result.apiUrl;
     resultDoc.title = result.title;
     resultDoc.description = result.description;
     resultDoc.jumlah_pertanyaan = result.questions.length;
     resultDoc.questions = result.questions;
     resultDoc.rawApiResponse = result.rawApiResponse;
-    resultDoc.status = result.questions.length > 0 ? 'success' : 'partial';
+    resultDoc.status = 'success';
     resultDoc.scrapeSteps = result.steps;
+    await resultDoc.save();
+    return resultDoc;
   } else {
-    resultDoc.status = 'failed';
-    resultDoc.scrapeSteps = result.steps;
-    resultDoc.errors.push({
-      message: result.error || 'Unknown scraping error',
-      stack: result.stack || '',
-    });
-
-    // Also create a GlobalErrorLog entry
+    // Save to global error log for monitoring, but delete the scraper result itself
     await GlobalErrorLog.create({
       scrapeResultId: resultDoc._id,
       url,
@@ -384,8 +388,8 @@ export async function runScraper(url, slug) {
           step: s.step,
         })),
     });
+    
+    await ScrapeResult.findByIdAndDelete(resultDoc._id);
+    return null;
   }
-
-  await resultDoc.save();
-  return resultDoc;
 }

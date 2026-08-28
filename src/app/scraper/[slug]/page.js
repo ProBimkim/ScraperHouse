@@ -16,7 +16,7 @@ export default function ScraperResult({ params }) {
       try {
         const res = await fetch(`/api/scraper/${slug}`);
         if (!res.ok) {
-          setError(res.status === 404 ? 'Result not found' : 'Failed to fetch');
+          setError(res.status === 404 ? 'Scraper failed or returned 0 questions. It has been automatically deleted.' : 'Failed to fetch');
           setLoading(false);
           return;
         }

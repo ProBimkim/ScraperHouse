@@ -10,10 +10,13 @@
     "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^147.0.0",
+    "@sparticuz/chromium-min": "^147.0.0",
     "lucide-react": "^1.35.0",
     "mongoose": "^9.9.4",
     "next": "16.3.3",
     "puppeteer": "^24.43.1",
+    "puppeteer-core": "^24.43.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
