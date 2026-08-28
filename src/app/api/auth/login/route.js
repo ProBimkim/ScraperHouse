@@ -4,7 +4,8 @@ import { cookies } from 'next/headers'
 export async function POST(request) {
   try {
     const { keyword } = await request.json()
-    const correctPassword = process.env.APP_PASSWORD
+    // Fallback to DEV_BIMKIM if environment variable is undefined (e.g. dev server not restarted)
+    const correctPassword = process.env.APP_PASSWORD || 'DEV_BIMKIM'
 
     if (keyword === correctPassword) {
       cookies().set('auth_token', 'true', {
