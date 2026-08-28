@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {
     "lucide-react": "^1.35.0",
