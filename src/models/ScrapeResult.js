@@ -33,6 +33,7 @@ const ScrapeResultSchema = new mongoose.Schema({
   description: String,
   jumlah_pertanyaan: { type: Number, default: 0 },
   questions: [QuestionSchema],
+  rawApiResponse: { type: mongoose.Schema.Types.Mixed },
   errors: [ErrorLogSchema],
   scrapeSteps: [StepSchema],
   status: {

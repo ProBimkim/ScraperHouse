@@ -9,6 +9,9 @@ const HEADERS = {
 };
 
 const PREFETCH_URL_PATTERN = /"prefetchFormUrl"\s*:\s*"([^"]+)"/;
+const TOKEN_PATTERN = /name="__RequestVerificationToken"[^>]*value="([^"]+)"/;
+const CORRELATION_ID_PATTERN = /"correlationId"\s*:\s*"([^"]+)"/i;
+const SESSION_ID_PATTERN = /"sessionId"\s*:\s*"([^"]+)"/i;
 
 /**
  * Unescape a URL that was JSON-escaped inside HTML (e.g. \u0027 for single quote).
@@ -85,13 +88,17 @@ async function scrapeWithPuppeteer(url) {
       const respUrl = response.url();
       if (
         respUrl.includes('formapi/api') &&
-        respUrl.includes('runtimeForms') &&
+        (respUrl.includes('runtimeForms') || respUrl.includes('runtimeFormsWithResponses')) &&
         response.request().method() === 'GET'
       ) {
         try {
           const json = await response.json();
-          foundApiData = json;
-          foundApiUrl = respUrl;
+          // We only want the response that actually contains the questions, 
+          // or if we haven't found any yet. Timed forms might return an empty one first.
+          if (!foundApiData || (json.questions && json.questions.length > 0)) {
+            foundApiData = json;
+            foundApiUrl = respUrl;
+          }
         } catch {
           // non-JSON response, ignore
         }
@@ -102,8 +109,31 @@ async function scrapeWithPuppeteer(url) {
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
     steps.push({ step: 'navigate', status: 'ok' });
 
+    // Handle timed forms: click "Start" if present and questions are empty
+    let hasQuestions = foundApiData && foundApiData.questions && foundApiData.questions.length > 0;
+    
+    if (!hasQuestions) {
+      steps.push({ step: 'check_timed_form', status: 'starting' });
+      const buttons = await page.$$('button, [role="button"]');
+      let clickedStart = false;
+      for (const btn of buttons) {
+        const text = await page.evaluate((el) => el.innerText || el.textContent, btn);
+        if (text && text.toLowerCase().includes('start')) {
+          steps.push({ step: 'check_timed_form', status: 'found_start_button', text });
+          await btn.click();
+          clickedStart = true;
+          // Wait for the next API call which will contain the questions
+          await new Promise((r) => setTimeout(r, 4000));
+          break;
+        }
+      }
+      if (!clickedStart) {
+        steps.push({ step: 'check_timed_form', status: 'no_start_button' });
+      }
+    }
+
     // If not intercepted yet, wait up to 10s more
-    if (!foundApiData) {
+    if (!foundApiData || (!hasQuestions && foundApiData.questions?.length === 0)) {
       steps.push({ step: 'wait_for_api', status: 'waiting' });
       for (let i = 0; i < 20 && !foundApiData; i++) {
         await new Promise((r) => setTimeout(r, 500));
@@ -169,6 +199,7 @@ async function scrapeWithPuppeteer(url) {
       title,
       description,
       questions,
+      rawApiResponse: foundApiData,
       rawKeys: Object.keys(foundApiData),
     };
   } catch (err) {
@@ -212,13 +243,37 @@ async function scrapeWithFetch(url) {
     const apiUrl = unescapeUrl(match[1]);
     steps.push({ step: 'extract_api_url', status: 'ok', apiUrl });
 
+    // Extract tokens
+    const tokenMatch = TOKEN_PATTERN.exec(html);
+    const correlationMatch = CORRELATION_ID_PATTERN.exec(html);
+    const sessionMatch = SESSION_ID_PATTERN.exec(html);
+
+    const token = tokenMatch ? tokenMatch[1] : '';
+    const correlationId = correlationMatch ? correlationMatch[1] : '';
+    const sessionId = sessionMatch ? sessionMatch[1] : '';
+
+    steps.push({ 
+      step: 'extract_tokens', 
+      status: 'ok', 
+      foundToken: !!token, 
+      foundCorrelation: !!correlationId, 
+      foundSession: !!sessionId 
+    });
+
     steps.push({ step: 'fetch_api', status: 'starting' });
+    const apiHeaders = {
+      ...HEADERS,
+      Referer: url,
+      Accept: 'application/json',
+      Origin: 'https://forms.cloud.microsoft'
+    };
+
+    if (token) apiHeaders['__RequestVerificationToken'] = token;
+    if (correlationId) apiHeaders['X-CorrelationId'] = correlationId;
+    if (sessionId) apiHeaders['X-UserSessionId'] = sessionId;
+
     const apiResp = await fetch(apiUrl, {
-      headers: {
-        ...HEADERS,
-        Referer: url,
-        Accept: 'application/json',
-      },
+      headers: apiHeaders,
     });
 
     if (!apiResp.ok) {
@@ -240,6 +295,7 @@ async function scrapeWithFetch(url) {
       title,
       description,
       questions,
+      rawApiResponse: formJson,
       rawKeys: Object.keys(formJson),
     };
   } catch (err) {
@@ -283,6 +339,7 @@ export async function runScraper(url, slug) {
     resultDoc.description = result.description;
     resultDoc.jumlah_pertanyaan = result.questions.length;
     resultDoc.questions = result.questions;
+    resultDoc.rawApiResponse = result.rawApiResponse;
     resultDoc.status = result.questions.length > 0 ? 'success' : 'partial';
     resultDoc.scrapeSteps = result.steps;
   } else {
