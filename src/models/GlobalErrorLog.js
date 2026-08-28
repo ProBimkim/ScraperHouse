@@ -10,10 +10,11 @@ const ErrorEntrySchema = new mongoose.Schema({
 const GlobalErrorLogSchema = new mongoose.Schema({
   scrapeResultId: { type: mongoose.Schema.Types.ObjectId, ref: 'ScrapeResult' },
   url: String,
+  slug: String,
   errors: [ErrorEntrySchema],
   resolved: { type: Boolean, default: false },
   resolvedAt: Date,
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
 });
 
 export default mongoose.models.GlobalErrorLog || mongoose.model('GlobalErrorLog', GlobalErrorLogSchema);

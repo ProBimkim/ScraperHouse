@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'MS Forms Premium Scraper',
-  description: 'Scrape Microsoft Forms automatically using Puppeteer and MongoDB.',
+  title: 'MS Forms Scraper',
+  description: 'Premium MS Forms extraction tool powered by Puppeteer & MongoDB.',
 };
 
 export default function RootLayout({ children }) {

@@ -5,17 +5,28 @@ const QuestionSchema = new mongoose.Schema({
   title: String,
   type: String,
   required: Boolean,
-  choices: [String]
+  choices: [String],
 }, { _id: false });
 
 const ErrorLogSchema = new mongoose.Schema({
   message: String,
   stack: String,
-  timestamp: { type: Date, default: Date.now }
+  timestamp: { type: Date, default: Date.now },
 }, { _id: false });
 
+const StepSchema = new mongoose.Schema({
+  step: String,
+  status: String,
+  url: String,
+  apiUrl: String,
+  message: String,
+  stack: String,
+  httpStatus: Number,
+  length: Number,
+}, { _id: false, strict: false });
+
 const ScrapeResultSchema = new mongoose.Schema({
-  slug: { type: String, required: true, unique: true }, // e.g., 'scraper1'
+  slug: { type: String, required: true, unique: true },
   url: { type: String, required: true },
   apiUrl: String,
   title: String,
@@ -23,8 +34,13 @@ const ScrapeResultSchema = new mongoose.Schema({
   jumlah_pertanyaan: { type: Number, default: 0 },
   questions: [QuestionSchema],
   errors: [ErrorLogSchema],
-  status: { type: String, enum: ['processing', 'success', 'partial', 'failed'], default: 'processing' },
-  createdAt: { type: Date, default: Date.now }
+  scrapeSteps: [StepSchema],
+  status: {
+    type: String,
+    enum: ['processing', 'success', 'partial', 'failed'],
+    default: 'processing',
+  },
+  createdAt: { type: Date, default: Date.now },
 });
 
 export default mongoose.models.ScrapeResult || mongoose.model('ScrapeResult', ScrapeResultSchema);
