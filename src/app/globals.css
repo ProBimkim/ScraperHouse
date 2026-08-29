@@ -147,15 +147,7 @@ a:hover { color: var(--accent); }
   padding-left: 8px;
 }
 .nav-brand-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-  box-shadow: 0 0 15px var(--primary-glow);
+  display: none !important;
 }
 .nav-links {
   display: flex;
@@ -759,8 +751,4 @@ a:hover { color: var(--accent); }
   border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
-@media (min-width: 769px) {
-  .nav-brand-icon {
-    display: none !important;
-  }
-}
+
