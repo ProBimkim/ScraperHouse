@@ -13,6 +13,7 @@ const GlobalErrorLogSchema = new mongoose.Schema({
   slug: String,
   source: { type: String, enum: ['msforms', 'quizizz'], default: 'msforms' },
   errors: [ErrorEntrySchema],
+  debugContext: { type: mongoose.Schema.Types.Mixed },
   resolved: { type: Boolean, default: false },
   resolvedAt: Date,
   createdAt: { type: Date, default: Date.now },

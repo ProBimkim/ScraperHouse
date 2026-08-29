@@ -360,6 +360,9 @@ export async function runQuizizzScraper(input, inputType, slug) {
           stack: s.stack || '',
           step: s.step,
         })),
+      debugContext: {
+        steps: result.steps
+      }
     });
   }
 

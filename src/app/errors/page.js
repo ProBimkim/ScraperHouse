@@ -31,13 +31,22 @@ export default function ErrorMonitorPage() {
     const unresolvedErrors = errors.filter((e) => !e.resolved && (sourceFilter === 'all' || e.source === sourceFilter));
     const formatted = unresolvedErrors
       .map((errLog) => {
-        const header = `=== [${errLog.source}] ${errLog.slug || errLog.url} (${new Date(errLog.createdAt).toLocaleString('id-ID')}) ===`;
+        const header = `=== [${errLog.source.toUpperCase()}] ${errLog.slug || errLog.url} (${new Date(errLog.createdAt).toLocaleString('id-ID')}) ===`;
+        
+        let trace = '';
+        if (errLog.debugContext && errLog.debugContext.steps) {
+          trace = 'Full Scrape Steps Trace:\n' + errLog.debugContext.steps.map((s, i) => 
+            `  ${i + 1}. [${s.status.toUpperCase()}] ${s.step}${s.message ? ` - ${s.message}` : ''}`
+          ).join('\n') + '\n\n';
+        }
+
         const entries = errLog.errors
-          .map((e) => `[${e.type}] Step: ${e.step}\nMessage: ${e.message}\n${e.stack ? `Stack: ${e.stack}` : ''}`)
+          .map((e) => `[${e.type}] Step: ${e.step}\nMessage: ${e.message}\n${e.stack ? `Stack:\n${e.stack}` : ''}`)
           .join('\n---\n');
-        return `${header}\n${entries}`;
+          
+        return `${header}\n${trace}${entries}`;
       })
-      .join('\n\n');
+      .join('\n\n\n');
 
     try {
       await navigator.clipboard.writeText(formatted || 'No unresolved errors.');
