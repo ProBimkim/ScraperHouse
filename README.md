@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Microsoft Forms Scraper
+
+A robust web application built with Next.js that extracts questions, choices, and images from Microsoft Forms. This tool utilizes a dual-strategy scraping method combining native HTTP fetching and Puppeteer for reliable data extraction, even for forms with anti-bot protections or timed mechanisms.
+
+## Features
+
+- **Dual-Strategy Scraping**:
+  - **Fast Fetch**: Attempts to extract `prefetchFormUrl` and internal verification tokens directly from HTML for lightning-fast scraping.
+  - **Puppeteer Fallback**: Uses a headless browser (`@sparticuz/chromium`) to intercept API requests when forms require complex session handling, cookies, or start buttons for timed forms.
+- **Comprehensive Data Extraction**:
+  - Extracts form title and description.
+  - Retrieves all questions including types (multiple choice, text, etc.), choices, and required status.
+  - Downloads/extracts image URLs embedded in questions.
+- **Real-time Status Polling**: The frontend constantly polls the API to display the real-time processing status of the scraping job.
+- **Search & Filter**: Built-in search functionality to quickly find specific questions or choices from the scraped results.
+- **MongoDB Integration**: Stores all scraped results and global error logs persistently using Mongoose.
+- **Modern UI**: Clean, glassmorphism-inspired UI with Lucide React icons.
+
+## Tech Stack
+
+- **Framework**: [Next.js](https://nextjs.org/) (App Router)
+- **Frontend**: React 19, CSS (Custom Glassmorphism styling)
+- **Scraping Engine**: Puppeteer Core, `@sparticuz/chromium`, native `fetch`
+- **Database**: MongoDB (via Mongoose)
+- **Icons**: Lucide React
+
+## Prerequisites
+
+- Node.js (v18+)
+- MongoDB connection string (set in `.env.local`)
 
 ## Getting Started
 
-First, run the development server:
+1. **Clone the repository** (if not already done).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+   *Note: A postinstall script will automatically install the required Chromium binaries for Puppeteer.*
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. **Set up Environment Variables**:
+   Create a `.env.local` file in the root directory and add your MongoDB connection string:
+   ```env
+   MONGODB_URI=your_mongodb_connection_string
+   ```
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+4. **Run the Development Server**:
+   ```bash
+   npm run dev
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+5. **Open the Application**:
+   Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Learn More
+## How It Works (Internal Architecture)
 
-To learn more about Next.js, take a look at the following resources:
+### 1. The Scraping Core (`src/lib/scraper.js`)
+The scraper engine attempts to fetch the form data without launching a heavy browser first:
+- **`scrapeWithFetch(url)`**: Downloads the form's HTML, uses Regex to find the `prefetchFormUrl`, `__RequestVerificationToken`, `correlationId`, and `sessionId`. It then calls the internal Microsoft API.
+- **`scrapeWithPuppeteer(url)`**: If the fetch strategy fails (often due to timed forms or strict session requirements), Puppeteer is launched. It navigates to the page, clicks the "Start" button if it's a timed form, and intercepts the `/formapi/api/...` network response to capture the JSON payload.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 2. Frontend Viewer (`src/app/scraper/[slug]/page.js`)
+When a form is submitted for scraping, a unique `slug` is generated. The user is redirected to the results page which:
+- Polls `/api/scraper/[slug]` every 3 seconds until the status changes from `processing` to `success` or `failed`.
+- Renders the form metadata and a list of questions.
+- Includes a real-time debug view of the "Scrape Steps" to see exactly what the backend is doing (e.g., launching browser, intercepting API, fallback success/fail).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Database Schema Models
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **`ScrapeResult`**: Stores the slug, original URL, form title/description, array of extracted questions, raw API response, and the chronological scraping steps for debugging.
+- **`GlobalErrorLog`**: Centralized logging for any failures during the scraping process to assist in monitoring and debugging edge cases in Microsoft Forms' updates.
