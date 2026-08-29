@@ -609,3 +609,10 @@ a:hover { color: var(--primary); }
   text-transform: uppercase;
 }
 
+/* ===== Responsive Utilities ===== */
+@media (max-width: 768px) {
+  .dashboard-logo {
+    display: none !important;
+  }
+}
+
