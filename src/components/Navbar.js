@@ -13,17 +13,24 @@ export default function Navbar({ errorCount = 0 }) {
         <div className="nav-brand-icon" style={{ background: 'transparent', padding: 0 }}>
           <Image src="/logo.png" alt="Logo" width={24} height={24} className="object-contain" />
         </div>
-        <span>FormScraper</span>
+        <span>ScraperHub</span>
       </Link>
 
       <div className="nav-links">
         <Link href="/" className={`nav-link ${pathname === '/' ? 'active' : ''}`}>
-          <Search size={16} />
-          Scraping
+          Dashboard
         </Link>
-        <Link href="/errors" className={`nav-link ${pathname === '/errors' ? 'active' : ''}`}>
+        <Link href="/ms-forms" className={`nav-link ${pathname.startsWith('/ms-forms') ? 'active' : ''}`}>
+          <Search size={16} />
+          MS Forms
+        </Link>
+        <Link href="/quizizz" className={`nav-link ${pathname.startsWith('/quizizz') ? 'active' : ''}`}>
+          <Search size={16} />
+          Quizizz
+        </Link>
+        <Link href="/errors" className={`nav-link ${pathname.startsWith('/errors') ? 'active' : ''}`}>
           <AlertTriangle size={16} />
-          Error Monitor
+          Errors
           {errorCount > 0 && <span className="nav-badge">{errorCount}</span>}
         </Link>
       </div>

@@ -1,176 +1,78 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Search, ChevronRight, Loader2, Clock, CheckCircle, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { FormInput, Gamepad2, AlertTriangle, ArrowRight } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import styles from './page.module.css';
+import { useEffect, useState } from 'react';
 
-export default function Home() {
-  const router = useRouter();
-  const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]);
+export default function Dashboard() {
   const [errorCount, setErrorCount] = useState(0);
-  const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    fetchHistory();
-    fetchErrorCount();
-    const interval = setInterval(() => {
-      fetchHistory();
-      fetchErrorCount();
-    }, 4000);
-    return () => clearInterval(interval);
+    fetch('/api/errors')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setErrorCount(data.length);
+      })
+      .catch(() => {});
   }, []);
-
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch('/api/history');
-      if (res.ok) setHistory(await res.json());
-    } catch {}
-  };
-
-  const fetchErrorCount = async () => {
-    try {
-      const res = await fetch('/api/errors');
-      if (res.ok) {
-        const data = await res.json();
-        setErrorCount(data.length);
-      }
-    } catch {}
-  };
-
-  const handleScrape = async (e) => {
-    e.preventDefault();
-    if (!url || loading) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setToast(data.error);
-        setTimeout(() => setToast(null), 4000);
-      } else if (data.slug) {
-        router.push(`/scraper/${data.slug}`);
-      }
-    } catch (err) {
-      setToast(err.message);
-      setTimeout(() => setToast(null), 4000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (e, slug) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this scraper result?')) return;
-    
-    try {
-      const res = await fetch(`/api/scraper/${slug}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchHistory();
-      } else {
-        const data = await res.json();
-        setToast(data.error || 'Failed to delete');
-        setTimeout(() => setToast(null), 4000);
-      }
-    } catch (err) {
-      setToast(err.message);
-      setTimeout(() => setToast(null), 4000);
-    }
-  };
-
-  const statusBadge = (status) => {
-    const map = {
-      success: 'badge-success',
-      processing: 'badge-processing',
-      failed: 'badge-failed',
-      partial: 'badge-partial',
-    };
-    return `badge ${map[status] || 'badge-processing'}`;
-  };
 
   return (
     <>
       <Navbar errorCount={errorCount} />
       <div className="container">
-        <h1 className="page-title">Scrape Microsoft Forms</h1>
-        <p className="page-subtitle">
-          Paste a public Microsoft Forms URL to extract its structure, questions, and choices.
+        <h1 className="page-title" style={{ textAlign: 'center', marginBottom: '16px', marginTop: '20px' }}>
+          ScraperHub
+        </h1>
+        <p className="page-subtitle" style={{ textAlign: 'center', marginBottom: '48px' }}>
+          Welcome to the central dashboard for data extraction tools and monitoring.
         </p>
 
-        <form onSubmit={handleScrape} className="glass-card scraper-input-card">
-          <input
-            type="url"
-            placeholder="https://forms.cloud.microsoft/r/..."
-            className="input-field"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-          />
-          <button type="submit" className="btn btn-primary" disabled={loading || !url}>
-            {loading ? (
-              <>
-                <span className="spinner" />
-                Scraping...
-              </>
-            ) : (
-              <>
-                <Search size={18} />
-                Scrape Now
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="glass-card">
-          <div className="section-title">
-            <Clock size={18} />
-            Scraping History
-          </div>
-          {history.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-icon">📋</div>
-              <div>No scraping results yet. Paste a URL above to get started.</div>
+        <div className={styles.dashboardGrid}>
+          {/* MS Forms Scraper */}
+          <Link href="/ms-forms" className={styles.dashboardCard}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(124, 108, 240, 0.15)', color: 'var(--primary)' }}>
+              <FormInput size={32} />
             </div>
-          ) : (
-            history.map((item) => (
-              <div
-                key={item._id}
-                className="history-item"
-                onClick={() => router.push(`/scraper/${item.slug}`)}
-              >
-                <div className="history-top-row">
-                  <div className="history-title" style={{ flex: 1 }}>{item.title || item.url}</div>
-                  <button 
-                    className="btn btn-ghost btn-sm" 
-                    style={{ padding: '4px', color: 'var(--error)' }}
-                    onClick={(e) => handleDelete(e, item.slug)}
-                    title="Delete Result"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                  <ChevronRight size={16} color="var(--text-muted)" style={{ marginLeft: '8px' }} />
-                </div>
-                <div className="history-meta">
-                  <span className={statusBadge(item.status)}>{item.status}</span>
-                  <span>{item.slug}</span>
-                  <span>{new Date(item.createdAt).toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-            ))
-          )}
+            <h2 className={styles.cardTitle}>Microsoft Forms</h2>
+            <p className={styles.cardDesc}>
+              Extract questions, structure, and media from public MS Forms links safely and efficiently.
+            </p>
+            <div className={styles.cardAction}>
+              Open Scraper <ArrowRight size={16} />
+            </div>
+          </Link>
+
+          {/* Quizizz Scraper */}
+          <Link href="/quizizz" className={styles.dashboardCard}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(136, 84, 192, 0.15)', color: '#a55eea' }}>
+              <Gamepad2 size={32} />
+            </div>
+            <h2 className={styles.cardTitle}>Quizizz Scraper</h2>
+            <p className={styles.cardDesc}>
+              Fetch quiz questions and reveal correct answers using Game PINs or public Quiz URLs.
+            </p>
+            <div className={styles.cardAction}>
+              Open Scraper <ArrowRight size={16} />
+            </div>
+          </Link>
+
+          {/* Error Monitor */}
+          <Link href="/errors" className={styles.dashboardCard}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(255, 107, 122, 0.15)', color: 'var(--error)' }}>
+              <AlertTriangle size={32} />
+              {errorCount > 0 && <span className={styles.badgePulse}>{errorCount}</span>}
+            </div>
+            <h2 className={styles.cardTitle}>Error Monitor</h2>
+            <p className={styles.cardDesc}>
+              Centralized logging and auto-debugging dashboard for all scraper operations.
+            </p>
+            <div className={styles.cardAction}>
+              View Logs <ArrowRight size={16} />
+            </div>
+          </Link>
         </div>
       </div>
-
-      {toast && (
-        <div className="toast">
-          <span style={{ color: 'var(--error)' }}>⚠️</span> {toast}
-        </div>
-      )}
     </>
   );
 }

@@ -11,6 +11,7 @@ const GlobalErrorLogSchema = new mongoose.Schema({
   scrapeResultId: { type: mongoose.Schema.Types.ObjectId, ref: 'ScrapeResult' },
   url: String,
   slug: String,
+  source: { type: String, enum: ['msforms', 'quizizz'], default: 'msforms' },
   errors: [ErrorEntrySchema],
   resolved: { type: Boolean, default: false },
   resolvedAt: Date,
