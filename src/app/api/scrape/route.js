@@ -14,9 +14,9 @@ export async function POST(req) {
 
     await connectToDatabase();
     
-    // Generate slug like "scraper1"
-    const count = await ScrapeResult.countDocuments();
-    const slug = `scraper${count + 1}`;
+    // Generate unique slug
+    const timestamp = Date.now().toString(36);
+    const slug = `scraper_${timestamp}`;
 
     // Wait for the scraper to finish so Vercel doesn't kill the lambda
     await runScraper(url, slug);
