@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/logo.png" width="150" alt="Microsoft Forms Scraper Logo" />
+  <img src="./public/logo.png" width="400" alt="Microsoft Forms Scraper Logo" />
 </p>
 
 # Microsoft Forms Scraper
