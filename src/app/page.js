@@ -28,7 +28,7 @@ export default function Dashboard() {
             className="dashboard-logo" 
             style={{ 
               width: '100%', 
-              maxWidth: '300px', 
+              maxWidth: '150px', 
               height: 'auto',
               marginBottom: '16px' 
             }} 

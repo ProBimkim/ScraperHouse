@@ -47,7 +47,7 @@ export default function LoginPage() {
             alt="ScraperHouse Logo" 
             style={{ 
               width: '100%', 
-              maxWidth: '200px', 
+              maxWidth: '100px', 
               height: 'auto', 
               margin: '0 auto 16px',
               display: 'block'
