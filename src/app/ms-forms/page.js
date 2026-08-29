@@ -146,8 +146,7 @@ export default function Home() {
                 <div className="history-top-row">
                   <div className="history-title" style={{ flex: 1 }}>{item.title || item.url}</div>
                   <button 
-                    className="btn btn-ghost btn-sm" 
-                    style={{ padding: '4px', color: 'var(--error)' }}
+                    className="btn-icon"
                     onClick={(e) => handleDelete(e, item.slug)}
                     title="Delete Result"
                   >
