@@ -21,9 +21,21 @@ export default function Dashboard() {
     <>
       <Navbar errorCount={errorCount} />
       <div className="container">
-        <h1 className="page-title" style={{ textAlign: 'center', marginBottom: '16px', marginTop: '20px' }}>
-          ScraperHouse
-        </h1>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20px', marginBottom: '16px' }}>
+          <img 
+            src="/logo.png" 
+            alt="ScraperHouse Logo" 
+            style={{ 
+              width: '100%', 
+              maxWidth: '300px', 
+              height: 'auto',
+              marginBottom: '16px' 
+            }} 
+          />
+          <h1 className="page-title" style={{ textAlign: 'center', margin: 0 }}>
+            ScraperHouse
+          </h1>
+        </div>
         <p className="page-subtitle" style={{ textAlign: 'center', marginBottom: '48px' }}>
           Welcome to the central dashboard for data extraction tools and monitoring.
         </p>

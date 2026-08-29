@@ -156,10 +156,7 @@ a:hover { color: var(--primary); }
   font-weight: 800;
   letter-spacing: -0.5px;
   margin-bottom: 6px;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
 }
 .page-subtitle {
   color: var(--text-muted);
