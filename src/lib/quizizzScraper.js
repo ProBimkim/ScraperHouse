@@ -122,26 +122,17 @@ async function scrapeQuizByUrl(url) {
 
     // Listen to network responses to catch quiz data
     page.on('response', async (response) => {
-      const respUrl = response.url();
-      if (
-        respUrl.includes('/api/main/quiz/') || 
-        respUrl.includes('/api/main/game/') ||
-        respUrl.includes('quizizz.com/quiz/')
-      ) {
-        if (response.request().method() === 'GET') {
-          try {
-            const json = await response.json();
-            if ((json.data?.quiz?.info?.questions) || (json.data?.quiz?.questions)) {
-              foundApiData = json.data.quiz;
-              foundApiUrl = respUrl;
-            } else if (json.info?.questions || json.questions) {
-              foundApiData = json;
-              foundApiUrl = respUrl;
-            }
-          } catch (e) {
-            // ignore non-json
-          }
+      try {
+        if (response.headers()['content-type']?.includes('application/json')) {
+          const json = await response.json();
+          if (json.data?.quiz?.info?.questions) { foundApiData = json.data.quiz; foundApiUrl = response.url(); }
+          else if (json.data?.quiz?.questions) { foundApiData = json.data.quiz; foundApiUrl = response.url(); }
+          else if (json.info?.questions) { foundApiData = json; foundApiUrl = response.url(); }
+          else if (json.questions) { foundApiData = json; foundApiUrl = response.url(); }
+          else if (json.room?.questions) { foundApiData = json.room; foundApiUrl = response.url(); }
         }
+      } catch (e) {
+        // ignore non-json
       }
     });
 
@@ -235,17 +226,17 @@ async function scrapeQuizByJoinCode(joinCode) {
     let foundApiUrl = null;
 
     page.on('response', async (response) => {
-      const respUrl = response.url();
-      if (respUrl.includes('/api/main/game/') || respUrl.includes('/v4/join')) {
-        try {
+      try {
+        if (response.headers()['content-type']?.includes('application/json')) {
           const json = await response.json();
-          // Room / game API logic might contain questions in 'room' or 'game' state
-          if (json.room?.questions || json.game?.questions || json.data?.room?.questions) {
-            foundApiData = json.room || json.game || json.data?.room;
-            foundApiUrl = respUrl;
-          }
-        } catch (e) {}
-      }
+          if (json.room?.questions) { foundApiData = json.room; foundApiUrl = response.url(); }
+          else if (json.game?.questions) { foundApiData = json.game; foundApiUrl = response.url(); }
+          else if (json.data?.room?.questions) { foundApiData = json.data.room; foundApiUrl = response.url(); }
+          else if (json.data?.quiz?.info?.questions) { foundApiData = json.data.quiz; foundApiUrl = response.url(); }
+          else if (json.info?.questions) { foundApiData = json; foundApiUrl = response.url(); }
+          else if (json.questions) { foundApiData = json; foundApiUrl = response.url(); }
+        }
+      } catch (e) {}
     });
 
     const url = `https://quizizz.com/join?gc=${joinCode}`;
