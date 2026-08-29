@@ -22,7 +22,7 @@ export default function Dashboard() {
       <Navbar errorCount={errorCount} />
       <div className="container">
         <h1 className="page-title" style={{ textAlign: 'center', marginBottom: '16px', marginTop: '20px' }}>
-          ScraperHub
+          ScraperHouse
         </h1>
         <p className="page-subtitle" style={{ textAlign: 'center', marginBottom: '48px' }}>
           Welcome to the central dashboard for data extraction tools and monitoring.

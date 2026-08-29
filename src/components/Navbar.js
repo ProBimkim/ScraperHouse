@@ -13,7 +13,7 @@ export default function Navbar({ errorCount = 0 }) {
         <div className="nav-brand-icon" style={{ background: 'transparent', padding: 0 }}>
           <Image src="/logo.png" alt="Logo" width={24} height={24} className="object-contain" />
         </div>
-        <span>ScraperHub</span>
+        <span>ScraperHouse</span>
       </Link>
 
       <div className="nav-links">
