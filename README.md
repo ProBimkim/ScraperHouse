@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./public/logo.png" width="150" alt="Microsoft Forms Scraper Logo" />
+</p>
+
 # Microsoft Forms Scraper
 
 A robust web application built with Next.js that extracts questions, choices, and images from Microsoft Forms. This tool utilizes a dual-strategy scraping method combining native HTTP fetching and Puppeteer for reliable data extraction, even for forms with anti-bot protections or timed mechanisms.
