@@ -42,6 +42,17 @@ export default function LoginPage() {
     <div className={styles.container}>
       <div className={styles.loginCard}>
         <div className={styles.header}>
+          <img 
+            src="/logo.png" 
+            alt="ScraperHouse Logo" 
+            style={{ 
+              width: '100%', 
+              maxWidth: '200px', 
+              height: 'auto', 
+              margin: '0 auto 16px',
+              display: 'block'
+            }} 
+          />
           <h1 className={styles.title}>
             Autentikasi Scraper
           </h1>
