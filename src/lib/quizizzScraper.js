@@ -25,9 +25,12 @@ function extractQuizizzQuestions(quizData) {
 
     // Gambar pertanyaan
     let imageUrl = null;
-    if (q.structure?.query?.media?.length > 0) {
-      const media = q.structure.query.media.find(m => m.type === 'image');
-      if (media && media.url) imageUrl = media.url;
+    const qMedia = q.structure?.query?.media;
+    if (Array.isArray(qMedia) && qMedia.length > 0) {
+      const m = qMedia.find(x => x.type === 'image') || qMedia[0];
+      if (m && m.url) imageUrl = m.url;
+    } else if (q.structure?.query?.image) {
+      imageUrl = typeof q.structure.query.image === 'string' ? q.structure.query.image : q.structure.query.image.url;
     }
 
     const choices = [];
@@ -48,16 +51,20 @@ function extractQuizizzQuestions(quizData) {
       }
 
       options.forEach((opt, idx) => {
-        let text = opt.text ? opt.text.replace(/<[^>]*>?/gm, '') : '';
+        let text = opt.text ? opt.text.replace(/<[^>]*>?/gm, '').trim() : '';
         let hasImage = false;
         let optImageUrl = null;
         
-        if (opt.media?.length > 0) {
-          const m = opt.media.find(x => x.type === 'image');
+        const optMedia = opt.media;
+        if (Array.isArray(optMedia) && optMedia.length > 0) {
+          const m = optMedia.find(x => x.type === 'image') || optMedia[0];
           if (m && m.url) {
             hasImage = true;
             optImageUrl = m.url;
           }
+        } else if (opt.image) {
+          hasImage = true;
+          optImageUrl = typeof opt.image === 'string' ? opt.image : opt.image.url;
         }
         
         const isCorrect = correctIndexes.includes(idx) || correctIndexes.includes(idx.toString());
