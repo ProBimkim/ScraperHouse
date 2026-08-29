@@ -5,7 +5,7 @@ const QuestionSchema = new mongoose.Schema({
   title: String,
   type: String,
   required: Boolean,
-  choices: [String],
+  choices: [mongoose.Schema.Types.Mixed],
   imageUrl: String,
 }, { _id: false });
 

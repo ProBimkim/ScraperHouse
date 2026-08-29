@@ -49,10 +49,23 @@ function extractQuestions(formJson) {
 
     for (const c of rawChoices) {
       if (typeof c === 'object' && c !== null) {
-        const text = c.displayText || c.description || c.Description || c.value;
-        if (text) choices.push(text);
+        const text = c.displayText || c.description || c.Description || c.value || '';
+        
+        // Find image if present
+        let optImageUrl = null;
+        if (c.image && c.image.resourceUrl) {
+          optImageUrl = c.image.resourceUrl;
+        } else if (c.imageInfo && c.imageInfo.resourceUrl) {
+          optImageUrl = c.imageInfo.resourceUrl;
+        } else if (c.ChoiceImage && c.ChoiceImage.resourceUrl) {
+          optImageUrl = c.ChoiceImage.resourceUrl;
+        }
+        
+        if (text || optImageUrl) {
+          choices.push({ text: String(text), imageUrl: optImageUrl });
+        }
       } else {
-        choices.push(String(c));
+        choices.push({ text: String(c), imageUrl: null });
       }
     }
 

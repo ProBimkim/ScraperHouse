@@ -186,9 +186,22 @@ export default function ScraperResult({ params }) {
                 )}
                 {q.choices?.length > 0 && (
                   <ul className="choice-list">
-                    {q.choices.map((c, ci) => (
-                      <li key={ci} className="choice-item">{c}</li>
-                    ))}
+                    {q.choices.map((c, ci) => {
+                      const text = typeof c === 'object' && c !== null ? c.text : c;
+                      const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
+                      return (
+                        <li key={ci} className="choice-item">
+                          <div>
+                            {text || (cImg ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>[Image Option]</span> : '')}
+                          </div>
+                          {cImg && (
+                            <div style={{ marginTop: '8px' }}>
+                              <img src={cImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
