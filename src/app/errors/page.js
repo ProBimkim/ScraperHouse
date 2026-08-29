@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Copy, CheckCircle2, AlertTriangle, ShieldCheck, RefreshCw, FormInput, Gamepad2 } from 'lucide-react';
+import { Copy, CheckCircle2, AlertTriangle, ShieldCheck, RefreshCw, FormInput } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 
 export default function ErrorMonitorPage() {
@@ -10,7 +10,7 @@ export default function ErrorMonitorPage() {
   const [resolving, setResolving] = useState(false);
   const [toast, setToast] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState('all'); // all, msforms, quizizz
+  const [sourceFilter, setSourceFilter] = useState('all'); // all, msforms
 
   useEffect(() => {
     fetchErrors();
@@ -93,9 +93,6 @@ export default function ErrorMonitorPage() {
   const totalUnresolved = errors.filter(e => !e.resolved).length; // Global unresolved
 
   const getSourceBadge = (source) => {
-    if (source === 'quizizz') {
-      return <span style={{ background: 'rgba(136, 84, 192, 0.2)', color: '#a55eea', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Gamepad2 size={10} /> Quizizz</span>;
-    }
     return <span style={{ background: 'rgba(124, 108, 240, 0.2)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FormInput size={10} /> MS Forms</span>;
   };
 
@@ -136,7 +133,6 @@ export default function ErrorMonitorPage() {
             <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', padding: '4px' }}>
               <button className={`btn btn-sm ${sourceFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`} style={{ border: 'none' }} onClick={() => setSourceFilter('all')}>All Sources</button>
               <button className={`btn btn-sm ${sourceFilter === 'msforms' ? 'btn-primary' : 'btn-ghost'}`} style={{ border: 'none' }} onClick={() => setSourceFilter('msforms')}>MS Forms</button>
-              <button className={`btn btn-sm ${sourceFilter === 'quizizz' ? 'btn-primary' : 'btn-ghost'}`} style={{ border: 'none' }} onClick={() => setSourceFilter('quizizz')}>Quizizz</button>
             </div>
             <div style={{ width: '1px', height: '24px', background: 'var(--border)', margin: '0 8px' }}></div>
             <button
@@ -199,9 +195,7 @@ export default function ErrorMonitorPage() {
               <div style={{ padding: '14px 18px', background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>Diagnostic Explanation:</div>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  {errLog.source === 'quizizz' ? 
-                    "Quizizz scraping failed. This usually happens if the Quiz URL is private, the Game PIN is invalid/expired, or Quizizz updated their internal API structure. Check the specific step failures below." :
-                    "MS Forms scraping failed. This may happen if the form requires organizational login, has anti-bot CAPTCHAs, or the Puppeteer browser failed to intercept the '/formapi' network payload."}
+                  {"MS Forms scraping failed. This may happen if the form requires organizational login, has anti-bot CAPTCHAs, or the Puppeteer browser failed to intercept the '/formapi' network payload."}
                 </div>
               </div>
 

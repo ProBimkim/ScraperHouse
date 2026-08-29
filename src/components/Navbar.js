@@ -24,10 +24,6 @@ export default function Navbar({ errorCount = 0 }) {
           <Search size={16} />
           MS Forms
         </Link>
-        <Link href="/quizizz" className={`nav-link ${pathname.startsWith('/quizizz') ? 'active' : ''}`}>
-          <Search size={16} />
-          Quizizz
-        </Link>
         <Link href="/errors" className={`nav-link ${pathname.startsWith('/errors') ? 'active' : ''}`}>
           <AlertTriangle size={16} />
           Errors

@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { FormInput, Gamepad2, AlertTriangle, ArrowRight } from 'lucide-react';
+import { FormInput, AlertTriangle, ArrowRight } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import styles from './page.module.css';
 import { useEffect, useState } from 'react';
@@ -37,20 +37,6 @@ export default function Dashboard() {
             <h2 className={styles.cardTitle}>Microsoft Forms</h2>
             <p className={styles.cardDesc}>
               Extract questions, structure, and media from public MS Forms links safely and efficiently.
-            </p>
-            <div className={styles.cardAction}>
-              Open Scraper <ArrowRight size={16} />
-            </div>
-          </Link>
-
-          {/* Quizizz Scraper */}
-          <Link href="/quizizz" className={styles.dashboardCard}>
-            <div className={styles.cardIconWrapper} style={{ background: 'rgba(136, 84, 192, 0.15)', color: '#a55eea' }}>
-              <Gamepad2 size={32} />
-            </div>
-            <h2 className={styles.cardTitle}>Quizizz Scraper</h2>
-            <p className={styles.cardDesc}>
-              Fetch quiz questions and reveal correct answers using Game PINs or public Quiz URLs.
             </p>
             <div className={styles.cardAction}>
               Open Scraper <ArrowRight size={16} />
