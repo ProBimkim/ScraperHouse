@@ -616,3 +616,8 @@ a:hover { color: var(--primary); }
   }
 }
 
+@media (min-width: 769px) {
+  .nav-brand-icon {
+    display: none !important;
+  }
+}
