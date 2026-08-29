@@ -115,7 +115,7 @@ a:hover { color: var(--accent); }
     inset 0 1px 1px rgba(255, 255, 255, 0.15);
 }
 
-/* ===== Navbar ===== */
+/* ===== Navbar (Liquid Theme) ===== */
 .navbar {
   display: flex;
   align-items: center;
@@ -124,11 +124,17 @@ a:hover { color: var(--accent); }
   background: rgba(10, 14, 35, 0.65);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
   position: sticky;
   top: 0;
   z-index: 100;
+  border-bottom: none;
+  border-radius: 0 0 50% 50% / 0 0 10% 10%;
+  animation: liquid-header 6s ease-in-out infinite alternate;
+}
+@keyframes liquid-header {
+  0% { border-radius: 0 0 50% 50% / 0 0 10% 10%; }
+  100% { border-radius: 0 0 40% 60% / 0 0 15% 5%; }
 }
 .nav-brand {
   display: flex;
@@ -236,13 +242,12 @@ a:hover { color: var(--accent); }
   color: var(--text-muted);
 }
 
-/* ===== Buttons ===== */
+/* ===== Buttons (Liquid Theme) ===== */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   border: none;
-  border-radius: var(--radius-sm);
   padding: 14px 24px;
   font-size: 0.95rem;
   font-weight: 700;
@@ -253,6 +258,12 @@ a:hover { color: var(--accent); }
   letter-spacing: 0.025em;
   position: relative;
   overflow: hidden;
+  border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+  animation: liquid-btn 4s ease-in-out infinite alternate;
+}
+@keyframes liquid-btn {
+  0% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+  100% { border-radius: 60% 40% 30% 70% / 60% 30% 40% 50%; }
 }
 .btn-primary {
   background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
