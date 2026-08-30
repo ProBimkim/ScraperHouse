@@ -149,7 +149,7 @@ async function scrapeWithPuppeteer(url) {
     if (activeProxy) {
       try {
         const proxyUrl = new URL(activeProxy);
-        const proxyServer = `${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`;
+        const proxyServer = `${proxyUrl.hostname}:${proxyUrl.port}`;
         proxyArgs.push(`--proxy-server=${proxyServer}`);
         if (proxyUrl.username) {
           proxyAuth = {
