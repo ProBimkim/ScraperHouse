@@ -18,6 +18,9 @@ A modern, robust web application built with Next.js that serves as a central das
   - A dedicated view (`/errors`) to track, filter, and analyze failed scraping attempts.
   - Groups errors by source and provides detailed diagnostic explanations and full step-by-step traces for easy debugging.
 - **Real-time Status Polling**: The frontend constantly polls the API to display the real-time processing status of scraping jobs.
+- **Proxy & User-Agent Rotation**:
+  - Implements randomized User-Agent rotation for all requests to bypass simple bot detection.
+  - Supports rotating proxies via the `PROXY_LIST` environment variable for native `fetch` requests (Puppeteer runs without proxies due to HTTPS CONNECT limitations on free tiers).
 - **MongoDB Integration**: Stores all scraped results and global error logs persistently using Mongoose.
 
 ## Tech Stack
@@ -44,9 +47,11 @@ A modern, robust web application built with Next.js that serves as a central das
    *Note: A postinstall script will automatically install the required Chromium binaries for Puppeteer.*
 
 3. **Set up Environment Variables**:
-   Create a `.env.local` file in the root directory and add your MongoDB connection string:
+   Create a `.env.local` file in the root directory and add your MongoDB connection string and optional proxy list:
    ```env
    MONGODB_URI=your_mongodb_connection_string
+   # Optional: Comma-separated list of proxies for rotation (HTTP/HTTPS)
+   PROXY_LIST="http://user:pass@ip:port, http://user2:pass2@ip2:port2"
    ```
 
 4. **Run the Development Server**:
