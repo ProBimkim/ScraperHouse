@@ -3,11 +3,44 @@ import ScrapeResult from '../models/ScrapeResult';
 import GlobalErrorLog from '../models/GlobalErrorLog';
 import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-};
+// --- Proxy Configuration ---
+// Set PROXY_URL di Vercel env vars, contoh:
+//   http://user:pass@proxy.brightdata.com:22225  (BrightData Residential)
+//   http://user:pass@gate.smartproxy.com:7000     (Smartproxy)
+const PROXY_URL = process.env.PROXY_URL || '';
+
+// --- User-Agent Rotation ---
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+];
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function getHeaders() {
+  return {
+    'User-Agent': getRandomUserAgent(),
+    'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+  };
+}
+
+/**
+ * Returns fetch options with proxy agent if PROXY_URL is configured.
+ */
+function getProxyFetchOptions() {
+  if (!PROXY_URL) return {};
+  return { agent: new HttpsProxyAgent(PROXY_URL) };
+}
 
 const PREFETCH_URL_PATTERN = /"prefetchFormUrl"\s*:\s*"([^"]+)"/;
 const TOKEN_PATTERN = /name="__RequestVerificationToken"[^>]*value="([^"]+)"/;
@@ -97,30 +130,61 @@ function extractQuestions(formJson) {
 async function scrapeWithPuppeteer(url) {
   const steps = [];
   let browser;
+  const headers = getHeaders();
 
   try {
-    steps.push({ step: 'launch_browser', status: 'starting' });
+    steps.push({ step: 'launch_browser', status: 'starting', proxy: !!PROXY_URL });
 
     const isProd = process.env.NODE_ENV === 'production';
+
+    // Build proxy args for Puppeteer
+    const proxyArgs = [];
+    let proxyAuth = null;
+    if (PROXY_URL) {
+      try {
+        const proxyUrl = new URL(PROXY_URL);
+        const proxyServer = `${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`;
+        proxyArgs.push(`--proxy-server=${proxyServer}`);
+        if (proxyUrl.username) {
+          proxyAuth = {
+            username: decodeURIComponent(proxyUrl.username),
+            password: decodeURIComponent(proxyUrl.password || ''),
+          };
+        }
+      } catch (e) {
+        steps.push({ step: 'proxy_parse', status: 'failed', message: e.message });
+      }
+    }
+
     if (isProd) {
       const executablePath = await chromium.executablePath(
         'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
       );
       browser = await puppeteerCore.launch({
-        args: chromium.args,
+        args: [...chromium.args, ...proxyArgs],
         defaultViewport: chromium.defaultViewport,
         executablePath,
         headless: chromium.headless,
       });
     } else {
       const puppeteer = (await import('puppeteer')).default;
-      browser = await puppeteer.launch({ headless: 'new' });
+      browser = await puppeteer.launch({
+        headless: 'new',
+        args: proxyArgs,
+      });
     }
 
     steps.push({ step: 'launch_browser', status: 'ok' });
 
     const page = await browser.newPage();
-    await page.setUserAgent(HEADERS['User-Agent']);
+
+    // Authenticate proxy if credentials exist
+    if (proxyAuth) {
+      await page.authenticate(proxyAuth);
+      steps.push({ step: 'proxy_auth', status: 'ok' });
+    }
+
+    await page.setUserAgent(headers['User-Agent']);
 
     let foundApiData = null;
     let foundApiUrl = null;
@@ -201,8 +265,9 @@ async function scrapeWithPuppeteer(url) {
         const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 
         const resp = await fetch(apiUrl, {
+          ...getProxyFetchOptions(),
           headers: {
-            ...HEADERS,
+            ...headers,
             Referer: url,
             Cookie: cookieHeader,
           },
@@ -263,11 +328,13 @@ async function scrapeWithPuppeteer(url) {
  */
 async function scrapeWithFetch(url) {
   const steps = [];
+  const headers = getHeaders();
 
   try {
-    steps.push({ step: 'fetch_html', status: 'starting' });
+    steps.push({ step: 'fetch_html', status: 'starting', proxy: !!PROXY_URL });
     const htmlResp = await fetch(url, {
-      headers: HEADERS,
+      ...getProxyFetchOptions(),
+      headers,
       redirect: 'follow',
     });
     if (!htmlResp.ok) {
@@ -309,7 +376,7 @@ async function scrapeWithFetch(url) {
 
     steps.push({ step: 'fetch_api', status: 'starting' });
     const apiHeaders = {
-      ...HEADERS,
+      ...headers,
       Referer: url,
       Accept: 'application/json',
       Origin: 'https://forms.cloud.microsoft'
@@ -320,6 +387,7 @@ async function scrapeWithFetch(url) {
     if (sessionId) apiHeaders['X-UserSessionId'] = sessionId;
 
     const apiResp = await fetch(apiUrl, {
+      ...getProxyFetchOptions(),
       headers: apiHeaders,
     });
 
