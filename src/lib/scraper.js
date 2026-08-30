@@ -6,10 +6,15 @@ import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 // --- Proxy Configuration ---
-// Set PROXY_URL di Vercel env vars, contoh:
-//   http://user:pass@proxy.brightdata.com:22225  (BrightData Residential)
-//   http://user:pass@gate.smartproxy.com:7000     (Smartproxy)
-const PROXY_URL = process.env.PROXY_URL || '';
+// Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
+// Contoh: http://user:pass@ip1:port,http://user:pass@ip2:port
+const PROXY_LIST_ENV = process.env.PROXY_LIST || process.env.PROXY_URL || '';
+const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim()).filter(p => p.length > 0);
+
+function getRandomProxy() {
+  if (PROXIES.length === 0) return null;
+  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+}
 
 // --- User-Agent Rotation ---
 const USER_AGENTS = [
@@ -35,11 +40,11 @@ function getHeaders() {
 }
 
 /**
- * Returns fetch options with proxy agent if PROXY_URL is configured.
+ * Returns fetch options with proxy agent if a proxy is available.
  */
-function getProxyFetchOptions() {
-  if (!PROXY_URL) return {};
-  return { agent: new HttpsProxyAgent(PROXY_URL) };
+function getProxyFetchOptions(activeProxy) {
+  if (!activeProxy) return {};
+  return { agent: new HttpsProxyAgent(activeProxy) };
 }
 
 const PREFETCH_URL_PATTERN = /"prefetchFormUrl"\s*:\s*"([^"]+)"/;
@@ -133,16 +138,17 @@ async function scrapeWithPuppeteer(url) {
   const headers = getHeaders();
 
   try {
-    steps.push({ step: 'launch_browser', status: 'starting', proxy: !!PROXY_URL });
+    const activeProxy = getRandomProxy();
+    steps.push({ step: 'launch_browser', status: 'starting', proxy: !!activeProxy });
 
     const isProd = process.env.NODE_ENV === 'production';
 
     // Build proxy args for Puppeteer
     const proxyArgs = [];
     let proxyAuth = null;
-    if (PROXY_URL) {
+    if (activeProxy) {
       try {
-        const proxyUrl = new URL(PROXY_URL);
+        const proxyUrl = new URL(activeProxy);
         const proxyServer = `${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`;
         proxyArgs.push(`--proxy-server=${proxyServer}`);
         if (proxyUrl.username) {
@@ -265,7 +271,7 @@ async function scrapeWithPuppeteer(url) {
         const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 
         const resp = await fetch(apiUrl, {
-          ...getProxyFetchOptions(),
+          ...getProxyFetchOptions(activeProxy),
           headers: {
             ...headers,
             Referer: url,
@@ -329,11 +335,12 @@ async function scrapeWithPuppeteer(url) {
 async function scrapeWithFetch(url) {
   const steps = [];
   const headers = getHeaders();
+  const activeProxy = getRandomProxy();
 
   try {
-    steps.push({ step: 'fetch_html', status: 'starting', proxy: !!PROXY_URL });
+    steps.push({ step: 'fetch_html', status: 'starting', proxy: !!activeProxy });
     const htmlResp = await fetch(url, {
-      ...getProxyFetchOptions(),
+      ...getProxyFetchOptions(activeProxy),
       headers,
       redirect: 'follow',
     });
@@ -387,7 +394,7 @@ async function scrapeWithFetch(url) {
     if (sessionId) apiHeaders['X-UserSessionId'] = sessionId;
 
     const apiResp = await fetch(apiUrl, {
-      ...getProxyFetchOptions(),
+      ...getProxyFetchOptions(activeProxy),
       headers: apiHeaders,
     });
 
