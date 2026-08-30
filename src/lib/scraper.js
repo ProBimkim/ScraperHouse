@@ -138,58 +138,28 @@ async function scrapeWithPuppeteer(url) {
   const headers = getHeaders();
 
   try {
-    const activeProxy = getRandomProxy();
-    steps.push({ step: 'launch_browser', status: 'starting', proxy: !!activeProxy });
+    steps.push({ step: 'launch_browser', status: 'starting' });
 
     const isProd = process.env.NODE_ENV === 'production';
-
-    // Build proxy args for Puppeteer
-    const proxyArgs = [];
-    let proxyAuth = null;
-    if (activeProxy) {
-      try {
-        const proxyUrl = new URL(activeProxy);
-        const proxyServer = `${proxyUrl.hostname}:${proxyUrl.port}`;
-        proxyArgs.push(`--proxy-server=${proxyServer}`);
-        if (proxyUrl.username) {
-          proxyAuth = {
-            username: decodeURIComponent(proxyUrl.username),
-            password: decodeURIComponent(proxyUrl.password || ''),
-          };
-        }
-      } catch (e) {
-        steps.push({ step: 'proxy_parse', status: 'failed', message: e.message });
-      }
-    }
 
     if (isProd) {
       const executablePath = await chromium.executablePath(
         'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
       );
       browser = await puppeteerCore.launch({
-        args: [...chromium.args, ...proxyArgs],
+        args: chromium.args,
         defaultViewport: chromium.defaultViewport,
         executablePath,
         headless: chromium.headless,
       });
     } else {
       const puppeteer = (await import('puppeteer')).default;
-      browser = await puppeteer.launch({
-        headless: 'new',
-        args: proxyArgs,
-      });
+      browser = await puppeteer.launch({ headless: 'new' });
     }
 
     steps.push({ step: 'launch_browser', status: 'ok' });
 
     const page = await browser.newPage();
-
-    // Authenticate proxy if credentials exist
-    if (proxyAuth) {
-      await page.authenticate(proxyAuth);
-      steps.push({ step: 'proxy_auth', status: 'ok' });
-    }
-
     await page.setUserAgent(headers['User-Agent']);
 
     let foundApiData = null;
@@ -271,7 +241,6 @@ async function scrapeWithPuppeteer(url) {
         const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 
         const resp = await fetch(apiUrl, {
-          ...getProxyFetchOptions(activeProxy),
           headers: {
             ...headers,
             Referer: url,
