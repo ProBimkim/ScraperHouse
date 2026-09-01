@@ -1,6 +1,7 @@
 import connectToDatabase from './mongodb';
 import ScrapeResult from '../models/ScrapeResult';
 import GlobalErrorLog from '../models/GlobalErrorLog';
+import { uploadImageToCloudinary } from './cloudinary';
 import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -425,6 +426,52 @@ export async function runScraper(url, slug) {
   }
 
   if (result.success && result.questions && result.questions.length > 0) {
+    // --- Cloudinary Upload Logic Start ---
+    try {
+      result.steps = result.steps || [];
+      result.steps.push({ step: 'cloudinary_upload', status: 'starting' });
+      
+      const uploadPromises = [];
+      const questionsWithImages = result.questions; // We will mutate this directly
+      
+      for (let qIdx = 0; qIdx < questionsWithImages.length; qIdx++) {
+        const q = questionsWithImages[qIdx];
+        
+        // Upload question image
+        if (q.imageUrl) {
+          q.originalImageUrl = q.imageUrl;
+          const promise = uploadImageToCloudinary(q.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}`)
+            .then(secureUrl => { if (secureUrl) q.imageUrl = secureUrl; })
+            .catch(err => { console.error(`Failed to upload q_${qIdx}`, err); });
+          uploadPromises.push(promise);
+        }
+        
+        // Upload choices images
+        if (q.choices && q.choices.length > 0) {
+          for (let cIdx = 0; cIdx < q.choices.length; cIdx++) {
+            const c = q.choices[cIdx];
+            if (c.imageUrl) {
+              c.originalImageUrl = c.imageUrl;
+              const promise = uploadImageToCloudinary(c.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}_opt_${cIdx}`)
+                .then(secureUrl => { if (secureUrl) c.imageUrl = secureUrl; })
+                .catch(err => { console.error(`Failed to upload q_${qIdx}_opt_${cIdx}`, err); });
+              uploadPromises.push(promise);
+            }
+          }
+        }
+      }
+      
+      if (uploadPromises.length > 0) {
+        await Promise.allSettled(uploadPromises);
+      }
+      
+      result.steps.push({ step: 'cloudinary_upload', status: 'ok', count: uploadPromises.length });
+    } catch (uploadErr) {
+      result.steps.push({ step: 'cloudinary_upload', status: 'failed', message: uploadErr.message });
+      // Proceed with original URLs if upload fails
+    }
+    // --- Cloudinary Upload Logic End ---
+
     resultDoc.apiUrl = result.apiUrl;
     resultDoc.title = result.title;
     resultDoc.description = result.description;

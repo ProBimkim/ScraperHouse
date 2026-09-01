@@ -7,6 +7,7 @@ const QuestionSchema = new mongoose.Schema({
   required: Boolean,
   choices: [mongoose.Schema.Types.Mixed],
   imageUrl: String,
+  originalImageUrl: String,
 }, { _id: false });
 
 const ErrorLogSchema = new mongoose.Schema({
