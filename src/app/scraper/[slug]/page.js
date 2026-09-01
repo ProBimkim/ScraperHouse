@@ -4,6 +4,30 @@ import { ArrowLeft, Loader2, ExternalLink, Search } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 
+const FallbackImage = ({ primarySrc, fallbackSrc, alt, style }) => {
+  const [imgSrc, setImgSrc] = useState(primarySrc);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(primarySrc);
+    setHasError(false);
+  }, [primarySrc]);
+
+  return (
+    <img
+      src={imgSrc || ''}
+      alt={alt}
+      style={style}
+      onError={() => {
+        if (!hasError && fallbackSrc) {
+          setImgSrc(fallbackSrc);
+          setHasError(true);
+        }
+      }}
+    />
+  );
+};
+
 export default function ScraperResult({ params }) {
   const { slug } = use(params);
   const [data, setData] = useState(null);
@@ -49,7 +73,7 @@ export default function ScraperResult({ params }) {
 
   const filteredQuestions = data?.questions?.filter(q => 
     q.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    q.choices?.some(c => c.toLowerCase().includes(searchQuery.toLowerCase()))
+    q.choices?.some(c => (typeof c === 'string' ? c : c.text)?.toLowerCase().includes(searchQuery.toLowerCase()))
   ) || [];
 
   if (error) {
@@ -181,7 +205,7 @@ export default function ScraperResult({ params }) {
                 </div>
                 {q.imageUrl && (
                   <div style={{ margin: '16px 0' }}>
-                    <img src={q.imageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                    <FallbackImage primarySrc={q.imageUrl} fallbackSrc={q.originalImageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
                   </div>
                 )}
                 {q.choices?.length > 0 && (
@@ -189,6 +213,7 @@ export default function ScraperResult({ params }) {
                     {q.choices.map((c, ci) => {
                       const text = typeof c === 'object' && c !== null ? c.text : c;
                       const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
+                      const cOrigImg = typeof c === 'object' && c !== null ? c.originalImageUrl : null;
                       return (
                         <li key={ci} className="choice-item">
                           <div>
@@ -196,7 +221,7 @@ export default function ScraperResult({ params }) {
                           </div>
                           {cImg && (
                             <div style={{ marginTop: '8px' }}>
-                              <img src={cImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                              <FallbackImage primarySrc={cImg} fallbackSrc={cOrigImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
                             </div>
                           )}
                         </li>
