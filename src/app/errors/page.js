@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Copy, CheckCircle2, AlertTriangle, ShieldCheck, RefreshCw, FormInput } from 'lucide-react';
+import { Copy, CheckCircle2, AlertTriangle, ShieldCheck, RefreshCw, FormInput, Trash2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 
 export default function ErrorMonitorPage() {
@@ -8,6 +8,8 @@ export default function ErrorMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [toast, setToast] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all'); // all, msforms
@@ -77,6 +79,26 @@ export default function ErrorMonitorPage() {
     setResolving(false);
   };
 
+  const deleteAllErrors = async () => {
+    setDeleting(true);
+    setConfirmDelete(false);
+    try {
+      const res = await fetch('/api/errors', {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setToast(`🗑️ ${data.deletedCount} error(s) permanently deleted`);
+        setTimeout(() => setToast(null), 3000);
+        fetchErrors();
+      }
+    } catch (err) {
+      setToast(`Failed: ${err.message}`);
+      setTimeout(() => setToast(null), 3000);
+    }
+    setDeleting(false);
+  };
+
   const resolveOne = async (id) => {
     try {
       const res = await fetch(`/api/errors/${id}`, {
@@ -124,6 +146,14 @@ export default function ErrorMonitorPage() {
               >
                 <ShieldCheck size={16} />
                 {resolving ? 'Processing...' : 'Resolve All'}
+              </button>
+              <button
+                className="btn btn-liquid-delete"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting || errors.length === 0}
+              >
+                <Trash2 size={16} />
+                {deleting ? 'Deleting...' : 'Hapus History'}
               </button>
             </div>
           </div>
@@ -222,6 +252,28 @@ export default function ErrorMonitorPage() {
       {toast && (
         <div className="toast">
           {toast}
+        </div>
+      )}
+
+      {/* Confirm Delete Modal */}
+      {confirmDelete && (
+        <div className="confirm-overlay" onClick={() => setConfirmDelete(false)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon">🗑️</div>
+            <h3 className="confirm-title">Hapus Semua Error History?</h3>
+            <p className="confirm-desc">
+              Tindakan ini akan <strong>menghapus permanen</strong> semua {errors.length} error log dari database. Data tidak bisa dikembalikan.
+            </p>
+            <div className="confirm-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+                Batal
+              </button>
+              <button className="btn btn-liquid-delete" onClick={deleteAllErrors}>
+                <Trash2 size={16} />
+                Ya, Hapus Semua
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

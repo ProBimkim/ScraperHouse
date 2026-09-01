@@ -34,3 +34,14 @@ export async function PATCH() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+// DELETE — permanently delete ALL error history
+export async function DELETE() {
+  try {
+    await connectToDatabase();
+    const result = await GlobalErrorLog.deleteMany({});
+    return NextResponse.json({ deletedCount: result.deletedCount });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
