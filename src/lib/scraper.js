@@ -5,6 +5,7 @@ import { uploadImageToCloudinary } from './cloudinary';
 import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { getAIAnswers } from './groqAgent';
 
 // --- Proxy Configuration ---
 // Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
@@ -471,6 +472,17 @@ export async function runScraper(url, slug) {
       // Proceed with original URLs if upload fails
     }
     // --- Cloudinary Upload Logic End ---
+
+    // --- AI Answering Logic Start ---
+    try {
+      result.steps.push({ step: 'ai_answering', status: 'starting' });
+      const aiAnswers = await getAIAnswers(result.questions);
+      resultDoc.aiAnswers = aiAnswers;
+      result.steps.push({ step: 'ai_answering', status: 'ok', count: aiAnswers.length });
+    } catch (aiErr) {
+      result.steps.push({ step: 'ai_answering', status: 'failed', message: aiErr.message });
+    }
+    // --- AI Answering Logic End ---
 
     resultDoc.apiUrl = result.apiUrl;
     resultDoc.title = result.title;

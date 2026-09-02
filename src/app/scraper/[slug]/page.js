@@ -214,10 +214,17 @@ export default function ScraperResult({ params }) {
                       const text = typeof c === 'object' && c !== null ? c.text : c;
                       const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
                       const cOrigImg = typeof c === 'object' && c !== null ? c.originalImageUrl : null;
+                      
+                      const aiAnswer = data?.aiAnswers?.find(a => a.questionId === q.id);
+                      const isCorrect = aiAnswer && aiAnswer.answerIndex === ci;
+
                       return (
-                        <li key={ci} className="choice-item">
-                          <div>
-                            {text || (cImg ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>[Image Option]</span> : '')}
+                        <li key={ci} className={`choice-item ${isCorrect ? 'choice-item-correct' : ''}`}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>
+                              {text || (cImg ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>[Image Option]</span> : '')}
+                            </span>
+                            {isCorrect && <span className="choice-correct-badge">✓ AI Answer</span>}
                           </div>
                           {cImg && (
                             <div style={{ marginTop: '8px' }}>
@@ -229,6 +236,32 @@ export default function ScraperResult({ params }) {
                     })}
                   </ul>
                 )}
+                {data?.aiAnswers?.find(a => a.questionId === q.id) && (() => {
+                  const aiAnswer = data.aiAnswers.find(a => a.questionId === q.id);
+                  return (
+                    <div className="ai-answer-card">
+                      <div className="ai-answer-header">
+                        <span style={{ fontSize: '1.2rem' }}>🤖</span>
+                        <strong>Jawaban AI</strong>
+                      </div>
+                      <div className="ai-answer-body">
+                        {aiAnswer.answer && (
+                          <div style={{ marginBottom: '12px', fontSize: '1.05rem', fontWeight: 500, color: 'var(--text-main)' }}>
+                            {aiAnswer.answer}
+                          </div>
+                        )}
+                        {aiAnswer.thinking && (
+                          <details className="ai-thinking">
+                            <summary>Lihat cara berpikir AI</summary>
+                            <div className="ai-thinking-content">
+                              {aiAnswer.thinking}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ))
           ) : (

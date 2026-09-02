@@ -35,6 +35,12 @@ const ScrapeResultSchema = new mongoose.Schema({
   description: String,
   jumlah_pertanyaan: { type: Number, default: 0 },
   questions: [QuestionSchema],
+  aiAnswers: [{
+    questionId: String,
+    thinking: String,
+    answer: String,
+    answerIndex: Number,
+  }],
   rawApiResponse: { type: mongoose.Schema.Types.Mixed },
   errors: [ErrorLogSchema],
   scrapeSteps: [StepSchema],
