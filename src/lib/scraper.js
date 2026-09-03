@@ -151,9 +151,9 @@ async function scrapeWithPuppeteer(url) {
     if (activeProxy) {
       try {
         const proxyUrl = new URL(activeProxy);
-        launchArgs.push(`--proxy-server=${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`);
+        launchArgs.push(`--proxy-server=${proxyUrl.host}`);
         if (proxyUrl.username || proxyUrl.password) {
-          proxyAuth = { username: proxyUrl.username, password: proxyUrl.password };
+          proxyAuth = { username: decodeURIComponent(proxyUrl.username), password: decodeURIComponent(proxyUrl.password) };
         }
       } catch (e) {
         console.error('Invalid proxy URL:', activeProxy);
