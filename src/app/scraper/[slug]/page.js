@@ -87,8 +87,10 @@ export default function ScraperResult({ params }) {
 
       const fetchImage = async (url, baseFilename) => {
         try {
-          // Jika URL adalah external (dimulai dengan http), lewatkan melalui proxy lokal untuk menghindari CORS
-          const fetchUrl = url.startsWith('http') 
+          // Hanya gunakan proxy lokal jika gambar berasal dari Microsoft (karena aturan CORS ketat)
+          // Jika dari Cloudinary atau MongoDB (lokal), fetch langsung untuk menghemat bandwidth Vercel.
+          const isMicrosoftUrl = url.includes('forms.cloud.microsoft') || url.includes('forms.office.com');
+          const fetchUrl = isMicrosoftUrl 
             ? `/api/proxy-image?url=${encodeURIComponent(url)}` 
             : url;
             
