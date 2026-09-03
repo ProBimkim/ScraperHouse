@@ -1,5 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { connectToDatabase } from '@/lib/db';
+import connectToDatabase from '@/lib/mongodb';
 import StoredImage from '@/models/StoredImage';
 
 // Konfigurasi Cloudinary
