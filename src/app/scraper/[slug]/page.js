@@ -104,7 +104,7 @@ export default function ScraperResult({ params }) {
           imgCount++;
         } catch (e) {
           console.error('Failed to download image', url, e);
-          errors.push(`${baseFilename}: ${e.message}`);
+          errors.push(`${baseFilename}: HTTP ${e.message} | URL: ${url}`);
         }
       };
 
