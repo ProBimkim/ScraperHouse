@@ -42,3 +42,11 @@ next-env.d.ts
 
 .puppeteer_cache
 .puppeteer_cache/
+
+# agent & AI instruction files
+AGENTS.md
+agents.md
+AGENT.md
+agent.md
+CLAUDE.md
+claude.md
