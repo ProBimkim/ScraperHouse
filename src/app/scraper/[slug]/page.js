@@ -86,57 +86,34 @@ export default function ScraperResult({ params }) {
       let imgCount = 0;
       const errors = [];
 
-      const fetchImage = async (imgObj, baseFilename) => {
-        let urlsToTry = [];
-        if (imgObj.imageUrl) urlsToTry.push(imgObj.imageUrl);
-        if (imgObj.originalImageUrl && imgObj.originalImageUrl !== imgObj.imageUrl) {
-          urlsToTry.push(imgObj.originalImageUrl);
-        }
-
-        let success = false;
-        let lastError = null;
-
-        for (const url of urlsToTry) {
-          try {
-            // Gunakan proxy untuk URL Microsoft asli agar tidak kena CORS
-            const isMicrosoftUrl = url.includes('forms.cloud.microsoft') || url.includes('forms.office.com');
-            const fetchUrl = isMicrosoftUrl 
-              ? `/api/proxy-image?url=${encodeURIComponent(url)}` 
-              : url;
-              
-            const res = await fetch(fetchUrl);
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-            
-            const blob = await res.blob();
-            let ext = 'jpg';
-            if (blob.type === 'image/png') ext = 'png';
-            else if (blob.type === 'image/webp') ext = 'webp';
-            else if (blob.type === 'image/gif') ext = 'gif';
-            else if (blob.type === 'image/svg+xml') ext = 'svg';
-            
-            zip.file(`${baseFilename}.${ext}`, blob);
-            imgCount++;
-            success = true;
-            break; // Berhasil, tidak perlu coba URL cadangan
-          } catch (e) {
-            lastError = e;
-            // Gagal, loop akan berlanjut mencoba url berikutnya (fallback)
-          }
-        }
-
-        if (!success) {
-          errors.push(`${baseFilename}: ${lastError?.message} | URLs tried: ${urlsToTry.length}`);
+      const fetchImage = async (url, baseFilename) => {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          
+          const blob = await res.blob();
+          let ext = 'jpg';
+          if (blob.type === 'image/png') ext = 'png';
+          else if (blob.type === 'image/webp') ext = 'webp';
+          else if (blob.type === 'image/gif') ext = 'gif';
+          else if (blob.type === 'image/svg+xml') ext = 'svg';
+          
+          zip.file(`${baseFilename}.${ext}`, blob);
+          imgCount++;
+        } catch (e) {
+          console.error('Failed to download image', url, e);
+          errors.push(`${baseFilename}: HTTP ${e.message} | URL: ${url}`);
         }
       };
 
       const promises = [];
       data.questions?.forEach((q, qIdx) => {
-        if (q.imageUrl || q.originalImageUrl) {
-          promises.push(fetchImage(q, `question_${qIdx + 1}`));
+        if (q.imageUrl) {
+          promises.push(fetchImage(q.imageUrl, `question_${qIdx + 1}`));
         }
         q.choices?.forEach((c, cIdx) => {
-          if (typeof c === 'object' && c !== null && (c.imageUrl || c.originalImageUrl)) {
-            promises.push(fetchImage(c, `question_${qIdx + 1}_opt_${cIdx + 1}`));
+          if (typeof c === 'object' && c !== null && c.imageUrl) {
+            promises.push(fetchImage(c.imageUrl, `question_${qIdx + 1}_opt_${cIdx + 1}`));
           }
         });
       });
