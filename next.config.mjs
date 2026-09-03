@@ -23,7 +23,7 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium-min', 'puppeteer-extra', 'puppeteer-extra-plugin-stealth'],
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium-min'],
   async headers() {
     return [
       {
