@@ -5,6 +5,7 @@ import { uploadImageToCloudinary } from './cloudinary';
 import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import fetch from 'node-fetch';
 import { getAIAnswers } from './groqAgent';
 
 // --- Proxy Configuration ---
@@ -219,8 +220,67 @@ async function scrapeWithPuppeteer(url) {
     });
 
     steps.push({ step: 'navigate', status: 'starting', url });
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-    steps.push({ step: 'navigate', status: 'ok' });
+    try {
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+      steps.push({ step: 'navigate', status: 'ok' });
+    } catch (navError) {
+      if (navError.message.includes('ERR_PROXY_CONNECTION_FAILED') && activeProxy) {
+        steps.push({ step: 'navigate', status: 'proxy_failed_retrying_without_proxy' });
+        // Close the browser with bad proxy and launch a new one without proxy
+        await browser.close();
+        
+        let launchArgsNoProxy = isProd ? [...chromium.args] : [];
+        if (isProd) {
+          const executablePath = await chromium.executablePath(
+            'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
+          );
+          browser = await puppeteerCore.launch({
+            args: launchArgsNoProxy,
+            defaultViewport: chromium.defaultViewport,
+            executablePath,
+            headless: chromium.headless,
+          });
+        } else {
+          const basePuppeteer = (await import('puppeteer')).default;
+          browser = await basePuppeteer.launch({ 
+            headless: 'new',
+            args: launchArgsNoProxy
+          });
+        }
+        
+        const newPage = await browser.newPage();
+        await newPage.setUserAgent(headers['User-Agent']);
+        await newPage.evaluateOnNewDocument(() => {
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        });
+        
+        // Re-attach network interception to new page
+        newPage.on('response', async (response) => {
+          const respUrl = response.url();
+          if (
+            respUrl.includes('formapi/api') &&
+            (respUrl.includes('runtimeForms') || respUrl.includes('runtimeFormsWithResponses')) &&
+            response.request().method() === 'GET'
+          ) {
+            try {
+              const json = await response.json();
+              const qList = json.questions || json.Questions || [];
+              if (!foundApiData || qList.length > 0) {
+                foundApiData = json;
+                foundApiUrl = respUrl;
+              }
+            } catch {
+              // non-JSON response, ignore
+            }
+          }
+        });
+        
+        await newPage.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+        steps.push({ step: 'navigate', status: 'ok_without_proxy' });
+      } else {
+        throw navError;
+      }
+    }
 
     // Handle timed forms: click "Start" if present and questions are empty
     const currentQList = foundApiData ? (foundApiData.questions || foundApiData.Questions || []) : [];
