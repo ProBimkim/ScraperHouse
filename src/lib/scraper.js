@@ -7,6 +7,13 @@ import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getAIAnswers } from './groqAgent';
 
+// Force Vercel NFT to bundle these missing dependencies for puppeteer-extra
+if (process.env.NODE_ENV === 'FORCE_NFT_TRACE') {
+  require('is-plain-object');
+  require('clone-deep');
+  require('merge-deep');
+}
+
 // --- Proxy Configuration ---
 // Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
 // Contoh: http://user:pass@ip1:port,http://user:pass@ip2:port
