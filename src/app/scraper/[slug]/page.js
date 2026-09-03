@@ -88,7 +88,14 @@ export default function ScraperResult({ params }) {
 
       const fetchImage = async (url, baseFilename) => {
         try {
-          const res = await fetch(url);
+          // Hapus versi string dari Cloudinary (contoh: /v1788416122/) agar selalu mengambil versi terbaru
+          // Ini berguna jika user menimpa/mengupload ulang gambar secara manual di Cloudinary
+          let cleanUrl = url;
+          if (cleanUrl.includes('res.cloudinary.com')) {
+            cleanUrl = cleanUrl.replace(/\/v\d+\//, '/');
+          }
+
+          const res = await fetch(cleanUrl);
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           
           const blob = await res.blob();
