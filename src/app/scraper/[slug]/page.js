@@ -87,7 +87,12 @@ export default function ScraperResult({ params }) {
 
       const fetchImage = async (url, baseFilename) => {
         try {
-          const res = await fetch(url);
+          // Jika URL adalah external (dimulai dengan http), lewatkan melalui proxy lokal untuk menghindari CORS
+          const fetchUrl = url.startsWith('http') 
+            ? `/api/proxy-image?url=${encodeURIComponent(url)}` 
+            : url;
+            
+          const res = await fetch(fetchUrl);
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           const blob = await res.blob();
           
