@@ -6,15 +6,6 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getAIAnswers } from './groqAgent';
-import { addExtra } from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-
-// Force Vercel NFT to bundle these missing dependencies for puppeteer-extra
-if (process.env.NODE_ENV === 'FORCE_NFT_TRACE') {
-  require('is-plain-object');
-  require('clone-deep');
-  require('merge-deep');
-}
 
 // --- Proxy Configuration ---
 // Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
@@ -152,30 +143,54 @@ async function scrapeWithPuppeteer(url) {
     steps.push({ step: 'launch_browser', status: 'starting' });
 
     const isProd = process.env.NODE_ENV === 'production';
+    const activeProxy = getRandomProxy();
+    
+    let launchArgs = isProd ? [...chromium.args] : [];
+    let proxyAuth = null;
+
+    if (activeProxy) {
+      try {
+        const proxyUrl = new URL(activeProxy);
+        launchArgs.push(`--proxy-server=${proxyUrl.protocol}//${proxyUrl.hostname}:${proxyUrl.port}`);
+        if (proxyUrl.username || proxyUrl.password) {
+          proxyAuth = { username: proxyUrl.username, password: proxyUrl.password };
+        }
+      } catch (e) {
+        console.error('Invalid proxy URL:', activeProxy);
+      }
+    }
 
     if (isProd) {
-      const puppeteerExtra = addExtra(puppeteerCore);
-      puppeteerExtra.use(StealthPlugin());
       const executablePath = await chromium.executablePath(
         'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
       );
-      browser = await puppeteerExtra.launch({
-        args: chromium.args,
+      browser = await puppeteerCore.launch({
+        args: launchArgs,
         defaultViewport: chromium.defaultViewport,
         executablePath,
         headless: chromium.headless,
       });
     } else {
       const basePuppeteer = (await import('puppeteer')).default;
-      const puppeteerExtra = addExtra(basePuppeteer);
-      puppeteerExtra.use(StealthPlugin());
-      browser = await puppeteerExtra.launch({ headless: 'new' });
+      browser = await basePuppeteer.launch({ 
+        headless: 'new',
+        args: launchArgs
+      });
     }
 
     steps.push({ step: 'launch_browser', status: 'ok' });
 
     const page = await browser.newPage();
+    if (proxyAuth) {
+      await page.authenticate(proxyAuth);
+    }
+
     await page.setUserAgent(headers['User-Agent']);
+    
+    // Basic stealth evasion to bypass 403
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
 
     let foundApiData = null;
     let foundApiUrl = null;
