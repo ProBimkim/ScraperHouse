@@ -49,7 +49,14 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error(`Server Error (${res.status}): ${text.substring(0, 50)}...`);
+      }
+
       if (data.error) {
         setToast(data.error);
         setTimeout(() => setToast(null), 4000);

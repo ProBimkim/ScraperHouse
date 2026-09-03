@@ -197,7 +197,7 @@ async function scrapeWithPuppeteer(url) {
     });
 
     steps.push({ step: 'navigate', status: 'starting', url });
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
     steps.push({ step: 'navigate', status: 'ok' });
 
     // Handle timed forms: click "Start" if present and questions are empty
