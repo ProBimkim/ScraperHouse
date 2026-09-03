@@ -6,8 +6,6 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getAIAnswers } from './groqAgent';
-import { addExtra } from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
 // --- Proxy Configuration ---
 // Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
@@ -145,6 +143,9 @@ async function scrapeWithPuppeteer(url) {
     steps.push({ step: 'launch_browser', status: 'starting' });
 
     const isProd = process.env.NODE_ENV === 'production';
+    const { addExtra } = await import('puppeteer-extra');
+    const StealthPluginModule = await import('puppeteer-extra-plugin-stealth');
+    const StealthPlugin = StealthPluginModule.default || StealthPluginModule;
 
     if (isProd) {
       const puppeteerExtra = addExtra(puppeteerCore);
