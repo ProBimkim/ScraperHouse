@@ -84,6 +84,7 @@ export default function ScraperResult({ params }) {
     try {
       const zip = new JSZip();
       let imgCount = 0;
+      const errors = [];
 
       const fetchImage = async (url, baseFilename) => {
         try {
@@ -108,6 +109,7 @@ export default function ScraperResult({ params }) {
           imgCount++;
         } catch (e) {
           console.error('Failed to download image', url, e);
+          errors.push(`${baseFilename}: ${e.message}`);
         }
       };
 
@@ -128,8 +130,15 @@ export default function ScraperResult({ params }) {
       if (imgCount > 0) {
         const content = await zip.generateAsync({ type: 'blob' });
         saveAs(content, `images_${slug}.zip`);
+        if (errors.length > 0) {
+          alert(`Berhasil mendownload ${imgCount} gambar. Gagal: ${errors.length}\n\nError details:\n${errors.join('\n')}`);
+        }
       } else {
-        alert('Tidak ada gambar untuk diunduh.');
+        if (errors.length > 0) {
+          alert(`Gagal mendownload semua gambar!\n\nError details:\n${errors.join('\n')}`);
+        } else {
+          alert('Tidak ada gambar untuk diunduh (tidak ditemukan data gambar pada form ini).');
+        }
       }
     } catch (error) {
       console.error('Error creating zip:', error);
