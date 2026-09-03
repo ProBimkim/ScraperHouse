@@ -101,8 +101,8 @@ PROXY_LIST="http://xxxxxxxxx:xxxxxxxxx@xxxxxxxxx:xxxxxxxxx,http://xxxxxxxxx:xxxx
 ### 2. Installation
 Clone the repository and install dependencies:
 ```bash
-git clone https://github.com/ProBimkim/Scraper-deden.git
-cd Scraper-deden
+git clone https://github.com/ProBimkim/ScraperHouse.git
+cd ScraperHouse
 npm install
 ```
 *Note: The postinstall hook will configure the necessary Chromium binaries for Puppeteer.*
