@@ -181,7 +181,7 @@ async function scrapeWithPuppeteer(url) {
 
     steps.push({ step: 'launch_browser', status: 'ok' });
 
-    const page = await browser.newPage();
+    let page = await browser.newPage();
     if (proxyAuth) {
       await page.authenticate(proxyAuth);
     }
@@ -276,6 +276,7 @@ async function scrapeWithPuppeteer(url) {
         });
         
         await newPage.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+        page = newPage;
         steps.push({ step: 'navigate', status: 'ok_without_proxy' });
       } else {
         throw navError;
