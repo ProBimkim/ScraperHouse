@@ -50,6 +50,24 @@ function getProxyFetchOptions(activeProxy) {
   return { agent: new HttpsProxyAgent(activeProxy) };
 }
 
+/**
+ * Fetch with automatic fallback to direct fetch if proxy fails.
+ */
+async function fetchWithProxyFallback(targetUrl, options = {}, proxyUrl = null) {
+  if (!proxyUrl) {
+    return await fetch(targetUrl, options);
+  }
+  try {
+    return await fetch(targetUrl, {
+      ...options,
+      ...getProxyFetchOptions(proxyUrl),
+    });
+  } catch (err) {
+    console.warn(`Proxy fetch failed for ${targetUrl}, falling back to direct: ${err.message}`);
+    return await fetch(targetUrl, options);
+  }
+}
+
 const PREFETCH_URL_PATTERN = /"prefetchFormUrl"\s*:\s*"([^"]+)"/;
 const TOKEN_PATTERN = /name="__RequestVerificationToken"[^>]*value="([^"]+)"/;
 const CORRELATION_ID_PATTERN = /"correlationId"\s*:\s*"([^"]+)"/i;
@@ -195,29 +213,35 @@ async function scrapeWithPuppeteer(url) {
 
     let foundApiData = null;
     let foundApiUrl = null;
+    let formErrorMessage = null;
+
+    const setupInterceptor = (targetPage) => {
+      targetPage.on('response', async (response) => {
+        const respUrl = response.url();
+        if (
+          respUrl.includes('formapi/api') &&
+          (respUrl.includes('runtimeForms') || respUrl.includes('runtimeFormsWithResponses')) &&
+          response.request().method() === 'GET'
+        ) {
+          try {
+            const json = await response.json();
+            if (json.error && json.error.message) {
+              formErrorMessage = json.error.message;
+            }
+            const qList = json.questions || json.Questions || [];
+            if (!foundApiData || qList.length > 0) {
+              foundApiData = json;
+              foundApiUrl = respUrl;
+            }
+          } catch {
+            // non-JSON response, ignore
+          }
+        }
+      });
+    };
 
     // Intercept network responses to catch the form API call
-    page.on('response', async (response) => {
-      const respUrl = response.url();
-      if (
-        respUrl.includes('formapi/api') &&
-        (respUrl.includes('runtimeForms') || respUrl.includes('runtimeFormsWithResponses')) &&
-        response.request().method() === 'GET'
-      ) {
-        try {
-          const json = await response.json();
-          // We only want the response that actually contains the questions, 
-          // or if we haven't found any yet. Timed forms might return an empty one first.
-          const qList = json.questions || json.Questions || [];
-          if (!foundApiData || qList.length > 0) {
-            foundApiData = json;
-            foundApiUrl = respUrl;
-          }
-        } catch {
-          // non-JSON response, ignore
-        }
-      }
-    });
+    setupInterceptor(page);
 
     steps.push({ step: 'navigate', status: 'starting', url });
     try {
@@ -255,25 +279,7 @@ async function scrapeWithPuppeteer(url) {
         });
         
         // Re-attach network interception to new page
-        newPage.on('response', async (response) => {
-          const respUrl = response.url();
-          if (
-            respUrl.includes('formapi/api') &&
-            (respUrl.includes('runtimeForms') || respUrl.includes('runtimeFormsWithResponses')) &&
-            response.request().method() === 'GET'
-          ) {
-            try {
-              const json = await response.json();
-              const qList = json.questions || json.Questions || [];
-              if (!foundApiData || qList.length > 0) {
-                foundApiData = json;
-                foundApiUrl = respUrl;
-              }
-            } catch {
-              // non-JSON response, ignore
-            }
-          }
-        });
+        setupInterceptor(newPage);
         
         await newPage.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
         page = newPage;
@@ -331,23 +337,32 @@ async function scrapeWithPuppeteer(url) {
         const cookies = await page.cookies();
         const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
 
-        const resp = await fetch(apiUrl, {
+        const resp = await fetchWithProxyFallback(apiUrl, {
           headers: {
             ...headers,
             Referer: url,
             Cookie: cookieHeader,
           },
-        });
+        }, activeProxy);
 
         if (resp.ok) {
           foundApiData = await resp.json();
           foundApiUrl = apiUrl;
           steps.push({ step: 'fallback_fetch_api', status: 'ok' });
         } else {
+          let errDetail = `HTTP ${resp.status}`;
+          try {
+            const errJson = await resp.json();
+            if (errJson.error && errJson.error.message) {
+              errDetail = errJson.error.message;
+              formErrorMessage = errJson.error.message;
+            }
+          } catch {}
           steps.push({
             step: 'fallback_fetch_api',
             status: 'failed',
             httpStatus: resp.status,
+            message: errDetail,
           });
         }
       } else {
@@ -358,11 +373,11 @@ async function scrapeWithPuppeteer(url) {
     await browser.close();
     browser = null;
 
-    if (!foundApiData) {
+    if (!foundApiData || (foundApiData.questions && foundApiData.questions.length === 0 && formErrorMessage)) {
       return {
         success: false,
         steps,
-        error: 'Could not retrieve form data via browser intercept or HTML fallback.',
+        error: formErrorMessage || 'Could not retrieve form data via browser intercept or HTML fallback.',
       };
     }
 
@@ -399,17 +414,16 @@ async function scrapeWithFetch(url) {
 
   try {
     steps.push({ step: 'fetch_html', status: 'starting', proxy: !!activeProxy });
-    const htmlResp = await fetch(url, {
-      ...getProxyFetchOptions(activeProxy),
+    const htmlResp = await fetchWithProxyFallback(url, {
       headers,
       redirect: 'follow',
-    });
+    }, activeProxy);
     if (!htmlResp.ok) {
       steps.push({ step: 'fetch_html', status: 'failed', httpStatus: htmlResp.status });
       return { success: false, steps, error: `Failed to fetch HTML: ${htmlResp.status}` };
     }
     const html = await htmlResp.text();
-    const rawCookies = htmlResp.headers.getSetCookie?.() || [];
+    const rawCookies = htmlResp.headers.raw?.()['set-cookie'] || [];
     const cookieHeader = rawCookies.map(c => c.split(';')[0]).join('; ');
     steps.push({ step: 'fetch_html', status: 'ok', length: html.length, cookiesFound: rawCookies.length });
 
@@ -459,25 +473,39 @@ async function scrapeWithFetch(url) {
     steps.push({ step: 'fetch_api', status: 'delaying' });
     await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500));
 
-    let apiResp = await fetch(apiUrl, {
-      ...getProxyFetchOptions(activeProxy),
+    let apiResp = await fetchWithProxyFallback(apiUrl, {
       headers: apiHeaders,
-    });
+    }, activeProxy);
 
     if (apiResp.status === 403) {
+      try {
+        const clone = apiResp.clone();
+        const errJson = await clone.json();
+        if (errJson.error && errJson.error.message) {
+          steps.push({ step: 'fetch_api', status: 'failed', httpStatus: 403, message: errJson.error.message });
+          return { success: false, steps, error: errJson.error.message };
+        }
+      } catch {}
+
       steps.push({ step: 'fetch_api', status: 'retrying', httpStatus: 403 });
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-      apiResp = await fetch(apiUrl, {
-        ...getProxyFetchOptions(activeProxy),
+      apiResp = await fetchWithProxyFallback(apiUrl, {
         headers: apiHeaders,
-      });
+      }, activeProxy);
     }
 
     if (!apiResp.ok) {
+      let errorMessage = `API returned status ${apiResp.status}`;
+      try {
+        const errJson = await apiResp.json();
+        if (errJson.error && errJson.error.message) {
+          errorMessage = errJson.error.message;
+        }
+      } catch {}
       const respHeaders = {};
       apiResp.headers.forEach((v, k) => { respHeaders[k] = v; });
-      steps.push({ step: 'fetch_api', status: 'failed', httpStatus: apiResp.status, responseHeaders: respHeaders });
-      return { success: false, steps, error: `API returned status ${apiResp.status}` };
+      steps.push({ step: 'fetch_api', status: 'failed', httpStatus: apiResp.status, message: errorMessage, responseHeaders: respHeaders });
+      return { success: false, steps, error: errorMessage };
     }
 
     const formJson = await apiResp.json();
@@ -519,7 +547,10 @@ export async function runScraper(url, slug) {
   let result = await scrapeWithFetch(url);
 
   // If pure fetch failed or returned 0 questions (e.g. timed form), fallback to Puppeteer
-  if (!result.success || !result.questions || result.questions.length === 0) {
+  // BUT if pure fetch specifically failed because the form is ended / closed, don't waste time running Puppeteer!
+  const isFormEnded = result.error && (result.error.toLowerCase().includes('form is ended') || result.error.toLowerCase().includes('form is closed'));
+
+  if (!isFormEnded && (!result.success || !result.questions || result.questions.length === 0)) {
     const fetchErrors = result.steps || [];
     const puppeteerResult = await scrapeWithPuppeteer(url);
 
@@ -529,6 +560,7 @@ export async function runScraper(url, slug) {
     } else {
       // Both failed — log all errors
       result.steps = [...fetchErrors, { step: 'fallback_to_puppeteer', status: 'failed' }, ...(puppeteerResult.steps || [])];
+      result.error = puppeteerResult.error || result.error;
     }
   }
 
