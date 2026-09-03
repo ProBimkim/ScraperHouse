@@ -6,6 +6,8 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getAIAnswers } from './groqAgent';
+import { addExtra } from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
 // Force Vercel NFT to bundle these missing dependencies for puppeteer-extra
 if (process.env.NODE_ENV === 'FORCE_NFT_TRACE') {
@@ -150,9 +152,6 @@ async function scrapeWithPuppeteer(url) {
     steps.push({ step: 'launch_browser', status: 'starting' });
 
     const isProd = process.env.NODE_ENV === 'production';
-    const { addExtra } = await import('puppeteer-extra');
-    const StealthPluginModule = await import('puppeteer-extra-plugin-stealth');
-    const StealthPlugin = StealthPluginModule.default || StealthPluginModule;
 
     if (isProd) {
       const puppeteerExtra = addExtra(puppeteerCore);
