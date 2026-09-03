@@ -143,20 +143,26 @@ async function scrapeWithPuppeteer(url) {
     steps.push({ step: 'launch_browser', status: 'starting' });
 
     const isProd = process.env.NODE_ENV === 'production';
+    const { addExtra } = await import('puppeteer-extra');
+    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
 
     if (isProd) {
+      const puppeteerExtra = addExtra(puppeteerCore);
+      puppeteerExtra.use(StealthPlugin());
       const executablePath = await chromium.executablePath(
         'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
       );
-      browser = await puppeteerCore.launch({
+      browser = await puppeteerExtra.launch({
         args: chromium.args,
         defaultViewport: chromium.defaultViewport,
         executablePath,
         headless: chromium.headless,
       });
     } else {
-      const puppeteer = (await import('puppeteer')).default;
-      browser = await puppeteer.launch({ headless: 'new' });
+      const basePuppeteer = (await import('puppeteer')).default;
+      const puppeteerExtra = addExtra(basePuppeteer);
+      puppeteerExtra.use(StealthPlugin());
+      browser = await puppeteerExtra.launch({ headless: 'new' });
     }
 
     steps.push({ step: 'launch_browser', status: 'ok' });
@@ -191,7 +197,7 @@ async function scrapeWithPuppeteer(url) {
     });
 
     steps.push({ step: 'navigate', status: 'starting', url });
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
     steps.push({ step: 'navigate', status: 'ok' });
 
     // Handle timed forms: click "Start" if present and questions are empty
@@ -320,7 +326,9 @@ async function scrapeWithFetch(url) {
       return { success: false, steps, error: `Failed to fetch HTML: ${htmlResp.status}` };
     }
     const html = await htmlResp.text();
-    steps.push({ step: 'fetch_html', status: 'ok', length: html.length });
+    const rawCookies = htmlResp.headers.getSetCookie?.() || [];
+    const cookieHeader = rawCookies.map(c => c.split(';')[0]).join('; ');
+    steps.push({ step: 'fetch_html', status: 'ok', length: html.length, cookiesFound: rawCookies.length });
 
     const match = PREFETCH_URL_PATTERN.exec(html);
     if (!match) {
@@ -363,14 +371,29 @@ async function scrapeWithFetch(url) {
     if (token) apiHeaders['__RequestVerificationToken'] = token;
     if (correlationId) apiHeaders['X-CorrelationId'] = correlationId;
     if (sessionId) apiHeaders['X-UserSessionId'] = sessionId;
+    if (cookieHeader) apiHeaders['Cookie'] = cookieHeader;
 
-    const apiResp = await fetch(apiUrl, {
+    steps.push({ step: 'fetch_api', status: 'delaying' });
+    await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500));
+
+    let apiResp = await fetch(apiUrl, {
       ...getProxyFetchOptions(activeProxy),
       headers: apiHeaders,
     });
 
+    if (apiResp.status === 403) {
+      steps.push({ step: 'fetch_api', status: 'retrying', httpStatus: 403 });
+      await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+      apiResp = await fetch(apiUrl, {
+        ...getProxyFetchOptions(activeProxy),
+        headers: apiHeaders,
+      });
+    }
+
     if (!apiResp.ok) {
-      steps.push({ step: 'fetch_api', status: 'failed', httpStatus: apiResp.status });
+      const respHeaders = {};
+      apiResp.headers.forEach((v, k) => { respHeaders[k] = v; });
+      steps.push({ step: 'fetch_api', status: 'failed', httpStatus: apiResp.status, responseHeaders: respHeaders });
       return { success: false, steps, error: `API returned status ${apiResp.status}` };
     }
 

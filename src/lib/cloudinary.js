@@ -20,7 +20,12 @@ export async function uploadImageToCloudinary(imageUrl, folder, publicId) {
 
   try {
     // Gunakan fetch untuk mendownload stream gambar dari sumber aslinya
-    const response = await fetch(imageUrl);
+    const response = await fetch(imageUrl, {
+      headers: {
+        'Referer': 'https://forms.cloud.microsoft/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      }
+    });
     if (!response.ok) {
       throw new Error(`Gagal mengunduh gambar dari URL asal. HTTP Status: ${response.status}`);
     }
