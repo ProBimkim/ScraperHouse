@@ -85,11 +85,19 @@ export default function ScraperResult({ params }) {
       const zip = new JSZip();
       let imgCount = 0;
 
-      const fetchImage = async (url, filename) => {
+      const fetchImage = async (url, baseFilename) => {
         try {
           const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           const blob = await res.blob();
-          zip.file(filename, blob);
+          
+          let ext = 'jpg';
+          if (blob.type === 'image/png') ext = 'png';
+          else if (blob.type === 'image/webp') ext = 'webp';
+          else if (blob.type === 'image/gif') ext = 'gif';
+          else if (blob.type === 'image/svg+xml') ext = 'svg';
+          
+          zip.file(`${baseFilename}.${ext}`, blob);
           imgCount++;
         } catch (e) {
           console.error('Failed to download image', url, e);
@@ -99,11 +107,11 @@ export default function ScraperResult({ params }) {
       const promises = [];
       data.questions?.forEach((q, qIdx) => {
         if (q.imageUrl) {
-          promises.push(fetchImage(q.imageUrl, `question_${qIdx + 1}.jpg`));
+          promises.push(fetchImage(q.imageUrl, `question_${qIdx + 1}`));
         }
         q.choices?.forEach((c, cIdx) => {
           if (typeof c === 'object' && c !== null && c.imageUrl) {
-            promises.push(fetchImage(c.imageUrl, `question_${qIdx + 1}_opt_${cIdx + 1}.jpg`));
+            promises.push(fetchImage(c.imageUrl, `question_${qIdx + 1}_opt_${cIdx + 1}`));
           }
         });
       });
