@@ -1,4 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
+import { connectToDatabase } from '@/lib/db';
+import StoredImage from '@/models/StoredImage';
 
 // Konfigurasi Cloudinary
 cloudinary.config({
@@ -13,11 +15,13 @@ cloudinary.config({
  * @param {string} imageUrl - URL asli gambar (misal dari MS Forms)
  * @param {string} folder - Folder tujuan di Cloudinary
  * @param {string} publicId - ID/Nama file di Cloudinary (tanpa ekstensi)
- * @returns {Promise<string>} - Mengembalikan URL Cloudinary permanen (HTTPS)
+ * @param {string} slug - Slug scraper result untuk relasi fallback MongoDB
+ * @returns {Promise<string>} - Mengembalikan URL Cloudinary permanen (HTTPS) atau URL lokal (/api/images/...)
  */
-export async function uploadImageToCloudinary(imageUrl, folder, publicId) {
+export async function uploadImageToCloudinary(imageUrl, folder, publicId, slug) {
   if (!imageUrl) return null;
 
+  let buffer = null;
   try {
     // Gunakan fetch untuk mendownload stream gambar dari sumber aslinya
     const response = await fetch(imageUrl, {
@@ -31,7 +35,7 @@ export async function uploadImageToCloudinary(imageUrl, folder, publicId) {
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    buffer = Buffer.from(arrayBuffer);
 
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -58,7 +62,35 @@ export async function uploadImageToCloudinary(imageUrl, folder, publicId) {
       uploadStream.end(buffer);
     });
   } catch (error) {
-    console.error('Gagal mengupload gambar ke Cloudinary:', error.message);
-    throw error; // Let the caller handle it and maybe fallback
+    console.warn(`Gagal mengupload gambar ${publicId} ke Cloudinary: ${error.message}. Coba fallback ke MongoDB...`);
+    
+    if (slug) {
+      try {
+        await connectToDatabase();
+        const contentType = imageUrl.includes('.png') ? 'image/png' : 'image/jpeg';
+        
+        // Upsert ke MongoDB
+        await StoredImage.findOneAndUpdate(
+          { slug, imageKey: publicId },
+          { 
+            slug, 
+            imageKey: publicId, 
+            contentType,
+            data: buffer,
+            size: buffer ? buffer.length : 0
+          },
+          { upsert: true, new: true }
+        );
+        
+        console.log(`Berhasil menyimpan gambar ${publicId} ke MongoDB sebagai fallback.`);
+        // Mengembalikan URL lokal untuk diload dari MongoDB
+        return `/api/images/${slug}/${publicId}`;
+      } catch (mongoError) {
+        console.error(`Gagal fallback menyimpan ke MongoDB untuk ${publicId}:`, mongoError.message);
+      }
+    }
+    
+    // Jika semua gagal, lemparkan error agar proses selanjutnya tahu
+    throw error;
   }
 }

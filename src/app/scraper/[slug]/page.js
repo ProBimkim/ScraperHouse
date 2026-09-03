@@ -3,6 +3,8 @@ import { useState, useEffect, use } from 'react';
 import { ArrowLeft, Loader2, ExternalLink, Search } from 'lucide-react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 const FallbackImage = ({ primarySrc, fallbackSrc, alt, style }) => {
   const [imgSrc, setImgSrc] = useState(primarySrc);
@@ -34,6 +36,7 @@ export default function ScraperResult({ params }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let interval;
@@ -75,6 +78,51 @@ export default function ScraperResult({ params }) {
     q.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     q.choices?.some(c => (typeof c === 'string' ? c : c.text)?.toLowerCase().includes(searchQuery.toLowerCase()))
   ) || [];
+
+  const handleDownloadImages = async () => {
+    setIsDownloading(true);
+    try {
+      const zip = new JSZip();
+      let imgCount = 0;
+
+      const fetchImage = async (url, filename) => {
+        try {
+          const res = await fetch(url);
+          const blob = await res.blob();
+          zip.file(filename, blob);
+          imgCount++;
+        } catch (e) {
+          console.error('Failed to download image', url, e);
+        }
+      };
+
+      const promises = [];
+      data.questions?.forEach((q, qIdx) => {
+        if (q.imageUrl) {
+          promises.push(fetchImage(q.imageUrl, `question_${qIdx + 1}.jpg`));
+        }
+        q.choices?.forEach((c, cIdx) => {
+          if (typeof c === 'object' && c !== null && c.imageUrl) {
+            promises.push(fetchImage(c.imageUrl, `question_${qIdx + 1}_opt_${cIdx + 1}.jpg`));
+          }
+        });
+      });
+
+      await Promise.all(promises);
+
+      if (imgCount > 0) {
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `images_${slug}.zip`);
+      } else {
+        alert('Tidak ada gambar untuk diunduh.');
+      }
+    } catch (error) {
+      console.error('Error creating zip:', error);
+      alert('Gagal membuat zip gambar.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   if (error) {
     return (
@@ -152,6 +200,20 @@ export default function ScraperResult({ params }) {
               <div className="stat-label">Slug</div>
               <div className="stat-value" style={{ fontSize: '1.2rem', color: 'var(--accent)' }}>{data?.slug}</div>
             </div>
+          </div>
+
+          <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={handleDownloadImages}
+              disabled={isDownloading || !data?.questions?.some(q => q.imageUrl || q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl))}
+            >
+              {isDownloading ? (
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Memproses ZIP...</>
+              ) : (
+                <>📦 Download Semua Gambar (ZIP)</>
+              )}
+            </button>
           </div>
         </div>
 

@@ -579,7 +579,7 @@ export async function runScraper(url, slug) {
         // Upload question image
         if (q.imageUrl) {
           q.originalImageUrl = q.imageUrl;
-          const promise = uploadImageToCloudinary(q.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}`)
+          const promise = uploadImageToCloudinary(q.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}`, slug)
             .then(secureUrl => { if (secureUrl) q.imageUrl = secureUrl; })
             .catch(err => { console.error(`Failed to upload q_${qIdx}`, err); });
           uploadPromises.push(promise);
@@ -591,7 +591,7 @@ export async function runScraper(url, slug) {
             const c = q.choices[cIdx];
             if (c.imageUrl) {
               c.originalImageUrl = c.imageUrl;
-              const promise = uploadImageToCloudinary(c.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}_opt_${cIdx}`)
+              const promise = uploadImageToCloudinary(c.imageUrl, `scraper/${slug}/questions`, `q_${qIdx}_opt_${cIdx}`, slug)
                 .then(secureUrl => { if (secureUrl) c.imageUrl = secureUrl; })
                 .catch(err => { console.error(`Failed to upload q_${qIdx}_opt_${cIdx}`, err); });
               uploadPromises.push(promise);
