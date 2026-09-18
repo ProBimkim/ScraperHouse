@@ -73,7 +73,7 @@
 .cardTitle {
   font-size: 1.35rem;
   font-weight: 800;
-  color: var(--text-main);
+  color: #ffffff;
   margin-bottom: 12px;
   letter-spacing: -0.025em;
   z-index: 1;
