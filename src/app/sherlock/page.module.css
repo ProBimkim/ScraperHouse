@@ -18,17 +18,14 @@
   font-weight: 800;
   letter-spacing: -0.04em;
   margin-bottom: 10px;
-  background: linear-gradient(135deg, #ffffff 0%, #34d399 50%, #3b82f6 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
   display: inline-flex;
   align-items: center;
   gap: 12px;
 }
 
 .subtitle {
-  color: var(--text-secondary);
+  color: #ffffff;
   font-size: 1.05rem;
   max-width: 650px;
   margin: 0 auto;

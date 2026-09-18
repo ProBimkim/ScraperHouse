@@ -32,12 +32,6 @@ Currently, ScraperHouse features a dual-engine Microsoft Forms scraper, an autom
   - Centralized error tracking and diagnostic view.
   - Logs failed scraping jobs (`GlobalErrorLog`), categorized by source (e.g. `ms-forms-fetch`, `ms-forms-puppeteer`, `api-validation`).
   - Displays full execution step traces, timestamps, error codes, and stack traces.
-- **GitDiagram AI Architecture Visualizer (`/gitdiagram`)**:
-  - **Instant GitHub to Mermaid Diagram**: Turns any public or private GitHub repository URL into an interactive, zoomable, and pannable Mermaid.js architectural graph.
-  - **Deep Code Inspection ("Lebih Akurat")**: Rather than relying only on file names and directory trees, the engine automatically extracts and parses key configs (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, `docker-compose.yml`) and core application entrypoints to accurately capture services, routing, and data flow.
-  - **High-Speed AI Engine**: Powered by Groq AI (`llama-3.3-70b-versatile`) with Server-Sent Events (SSE) streaming for real-time progress updates and architectural breakdown.
-  - **One-Click Export**: Export architecture graphs as vector SVG, high-resolution PNG, or copy raw Mermaid syntax.
-  - **Modern Liquid Capsule UI**: Implements the futuristic 3D glassmorphic button styling (`desainbutton.md`) with layered dimension shadows and neon glow effects.
 - **Proxy & Bandwidth Optimization**:
   - Rotating proxy support via `PROXY_LIST` for outgoing scraper `fetch` calls.
   - Randomized User-Agent headers to prevent basic bot detection.
@@ -51,7 +45,6 @@ Currently, ScraperHouse features a dual-engine Microsoft Forms scraper, an autom
 - **Styling**: Vanilla CSS (Custom Glassmorphism & responsive layouts)
 - **Scraping Engine**: Puppeteer Core, `@sparticuz/chromium`, Native `fetch`
 - **Database & Storage**: MongoDB (Mongoose), Cloudinary CDN (Image streaming)
-- **AI & Diagram Engine**: Groq SDK (`llama-3.3-70b-versatile`), Mermaid.js
 - **Archiving**: `JSZip`, `file-saver`
 - **Icons**: Lucide React
 
@@ -92,8 +85,6 @@ CLOUDINARY_API_SECRET="xxxxxxxxx"
 # Comma-separated list of HTTP/HTTPS rotating proxies for scraping requests
 PROXY_LIST="http://xxxxxxxxx:xxxxxxxxx@xxxxxxxxx:xxxxxxxxx,http://xxxxxxxxx:xxxxxxxxx@xxxxxxxxx:xxxxxxxxx"
 ```
-
-*(Note: Groq AI integration is deprecated/unused and does not need to be configured).*
 
 ---
 

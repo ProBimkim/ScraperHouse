@@ -178,7 +178,7 @@ a:hover { color: var(--accent); }
 }
 .nav-link.active {
   background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  color: #ffffff;
   border: 1px solid rgba(59, 130, 246, 0.3);
   box-shadow: 
     inset 0 3px 5px rgba(255, 255, 255, 0.2),
@@ -208,14 +208,10 @@ a:hover { color: var(--accent); }
   font-weight: 800;
   letter-spacing: -0.05em;
   margin-bottom: 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: #fff; /* fallback */
+  color: #ffffff;
 }
 .page-subtitle {
-  color: var(--text-muted);
+  color: #ffffff;
   font-size: 1rem;
   margin-bottom: 36px;
   font-weight: 400;
@@ -549,10 +545,7 @@ a:hover { color: var(--accent); }
 .stat-value {
   font-size: 1.8rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
 }
 .question-card {
   margin-bottom: 16px;
