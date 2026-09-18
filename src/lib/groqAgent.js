@@ -3,9 +3,8 @@ import { Groq } from 'groq-sdk';
 // Initialize Groq client
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// The model to use. Llama 3.1 70B is highly capable and fast on Groq.
-// You can also change this to 'mixtral-8x7b-32768' or 'llama3-70b-8192'.
-const MODEL = 'llama-3.1-70b-versatile';
+// The model to use. openai/gpt-oss-120b is active and powerful on Groq in 2026.
+const MODEL = 'openai/gpt-oss-120b';
 
 export async function getAIAnswers(questions) {
   if (!questions || questions.length === 0) return [];

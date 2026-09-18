@@ -32,6 +32,8 @@ export default function GitDiagramPage() {
   const [focus, setFocus] = useState('');
   const [token, setToken] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('openai/gpt-oss-120b');
+  const [modelUsed, setModelUsed] = useState('');
   const [showTokenInput, setShowTokenInput] = useState(false);
 
   // Load saved keys from localStorage on mount
@@ -155,6 +157,7 @@ export default function GitDiagramPage() {
     setAnalyzedFiles([]);
     setActiveTab('diagram');
     setZoom(1);
+    setModelUsed('');
 
     try {
       const response = await fetch('/api/gitdiagram/generate', {
@@ -165,6 +168,7 @@ export default function GitDiagramPage() {
           focus: focus.trim(),
           token: token.trim(),
           groqApiKey: groqApiKey.trim(),
+          selectedModel: selectedModel.trim(),
         }),
       });
 
@@ -210,6 +214,7 @@ export default function GitDiagramPage() {
                 if (data.fullText) setFullText(data.fullText);
                 if (data.repoInfo) setRepoInfo(data.repoInfo);
                 if (data.analyzedFiles) setAnalyzedFiles(data.analyzedFiles);
+                if (data.modelUsed) setModelUsed(data.modelUsed);
               } else if (currentEvent === 'error') {
                 throw new Error(data.message || 'Generation failed');
               }
@@ -378,7 +383,27 @@ export default function GitDiagramPage() {
               {/* API Keys Collapsible */}
               {showTokenInput && (
                 <div className={styles.tokenInputWrapper}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                        Groq AI Model:
+                      </label>
+                      <select
+                        className={styles.focusInput}
+                        style={{ width: '100%', cursor: 'pointer', background: 'rgba(10, 14, 35, 0.8)' }}
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                      >
+                        <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (Recommended - Smart Reasoning)</option>
+                        <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Ultra Fast)</option>
+                        <option value="groq/compound">groq/compound (Compound System)</option>
+                        <option value="groq/compound-mini">groq/compound-mini (Lightweight)</option>
+                      </select>
+                      <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Auto-detects active models and uses sequential fallback if unavailable.
+                      </p>
+                    </div>
+
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
                         Groq AI API Key (Optional / Overrides Server):
@@ -525,6 +550,21 @@ export default function GitDiagramPage() {
                   />
                   {repoInfo.language}
                 </span>
+                {modelUsed && (
+                  <span
+                    className={styles.repoMetaItem}
+                    style={{
+                      color: '#c084fc',
+                      background: 'rgba(192, 132, 252, 0.12)',
+                      border: '1px solid rgba(192, 132, 252, 0.25)',
+                      padding: '3px 10px',
+                      borderRadius: '999px',
+                      fontSize: '0.78rem',
+                    }}
+                  >
+                    <Sparkles size={12} /> {modelUsed}
+                  </span>
+                )}
                 <a
                   href={`https://github.com/${repoInfo.fullName}`}
                   target="_blank"
