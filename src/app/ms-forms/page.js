@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, ChevronRight, Loader2, Clock, CheckCircle, Trash2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
 export default function Home() {
   const router = useRouter();
@@ -11,6 +12,8 @@ export default function Home() {
   const [history, setHistory] = useState([]);
   const [errorCount, setErrorCount] = useState(0);
   const [toast, setToast] = useState(null);
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchHistory();
@@ -71,22 +74,31 @@ export default function Home() {
     }
   };
 
-  const handleDelete = async (e, slug) => {
+  const promptDelete = (e, item) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this scraper result?')) return;
-    
+    setItemToDelete(item);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await fetch(`/api/scraper/${slug}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scraper/${itemToDelete.slug}`, { method: 'DELETE' });
       if (res.ok) {
+        setItemToDelete(null);
         fetchHistory();
+        setToast('✅ Data berhasil dihapus.');
+        setTimeout(() => setToast(null), 3000);
       } else {
         const data = await res.json();
-        setToast(data.error || 'Failed to delete');
+        setToast(data.error || 'Gagal menghapus data');
         setTimeout(() => setToast(null), 4000);
       }
     } catch (err) {
       setToast(err.message);
       setTimeout(() => setToast(null), 4000);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -153,9 +165,10 @@ export default function Home() {
                 <div className="history-top-row">
                   <div className="history-title" style={{ flex: 1 }}>{item.title || item.url}</div>
                   <button 
+                    type="button"
                     className="btn-icon"
-                    onClick={(e) => handleDelete(e, item.slug)}
-                    title="Delete Result"
+                    onClick={(e) => promptDelete(e, item)}
+                    title="Hapus Data"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -174,9 +187,18 @@ export default function Home() {
 
       {toast && (
         <div className="toast">
-          <span style={{ color: 'var(--error)' }}>⚠️</span> {toast}
+          {toast}
         </div>
       )}
+
+      {/* Modal Konfirmasi Hapus Data */}
+      <DeleteConfirmModal
+        isOpen={Boolean(itemToDelete)}
+        onClose={() => !isDeleting && setItemToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isDeleting}
+        item={itemToDelete}
+      />
     </>
   );
 }

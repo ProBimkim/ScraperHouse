@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect, use } from 'react';
-import { ArrowLeft, Loader2, ExternalLink, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -32,11 +34,36 @@ const FallbackImage = ({ primarySrc, fallbackSrc, alt, style }) => {
 
 export default function ScraperResult({ params }) {
   const { slug } = use(params);
+  const router = useRouter();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionToast, setActionToast] = useState(null);
+
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/scraper/${slug}`, { method: 'DELETE' });
+      if (res.ok) {
+        router.push('/ms-forms');
+      } else {
+        const errData = await res.json();
+        setActionToast(errData.error || 'Gagal menghapus data.');
+        setTimeout(() => setActionToast(null), 4000);
+        setIsDeleting(false);
+        setShowDeleteModal(false);
+      }
+    } catch (err) {
+      setActionToast(err.message || 'Terjadi kesalahan saat menghapus.');
+      setTimeout(() => setActionToast(null), 4000);
+      setIsDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
 
   useEffect(() => {
     let interval;
@@ -226,7 +253,7 @@ export default function ScraperResult({ params }) {
             </div>
           </div>
 
-          <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '12px' }}>
+          <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <button 
               className="btn btn-primary" 
               onClick={handleDownloadImages}
@@ -237,6 +264,17 @@ export default function ScraperResult({ params }) {
               ) : (
                 <>📦 Download Semua Gambar (ZIP)</>
               )}
+            </button>
+
+            <button
+              type="button"
+              className="btn-liquid-delete"
+              onClick={() => setShowDeleteModal(true)}
+              disabled={isDownloading || isDeleting}
+              title="Hapus data scraping ini"
+            >
+              <Trash2 size={16} />
+              Hapus Hasil
             </button>
           </div>
         </div>
@@ -362,6 +400,21 @@ export default function ScraperResult({ params }) {
           </div>
         ) : null}
       </div>
+
+      {/* Modal Konfirmasi Hapus Data */}
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => !isDeleting && setShowDeleteModal(false)}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+        item={data}
+      />
+
+      {actionToast && (
+        <div className="toast">
+          <span style={{ color: 'var(--error)' }}>⚠️</span> {actionToast}
+        </div>
+      )}
     </>
   );
 }

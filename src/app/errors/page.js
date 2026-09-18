@@ -265,10 +265,10 @@ export default function ErrorMonitorPage() {
               Tindakan ini akan <strong>menghapus permanen</strong> semua {errors.length} error log dari database. Data tidak bisa dikembalikan.
             </p>
             <div className="confirm-actions">
-              <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+              <button type="button" className="btn-liquid-cancel" onClick={() => setConfirmDelete(false)}>
                 Batal
               </button>
-              <button className="btn btn-liquid-delete" onClick={deleteAllErrors}>
+              <button type="button" className="btn-liquid-delete" onClick={deleteAllErrors}>
                 <Trash2 size={16} />
                 Ya, Hapus Semua
               </button>
