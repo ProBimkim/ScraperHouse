@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { FormInput, UserSearch, AlertTriangle, ArrowRight } from 'lucide-react';
+import { FormInput, UserSearch, AlertTriangle, ArrowRight, GitGraph } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import styles from './page.module.css';
 import { useEffect, useState } from 'react';
@@ -67,6 +67,20 @@ export default function Dashboard() {
             </p>
             <div className={styles.cardAction}>
               Start Hunting <ArrowRight size={16} />
+            </div>
+          </Link>
+
+          {/* GitDiagram Visualizer */}
+          <Link href="/gitdiagram" className={styles.dashboardCard}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+              <GitGraph size={32} />
+            </div>
+            <h2 className={styles.cardTitle}>GitDiagram AI</h2>
+            <p className={styles.cardDesc}>
+              Transform any GitHub repository into an interactive Mermaid architecture diagram with AI-powered deep code inspection.
+            </p>
+            <div className={styles.cardAction}>
+              Visualize Repo <ArrowRight size={16} />
             </div>
           </Link>
 
