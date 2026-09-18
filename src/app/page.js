@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { FormInput, AlertTriangle, ArrowRight } from 'lucide-react';
+import { FormInput, UserSearch, AlertTriangle, ArrowRight } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import styles from './page.module.css';
 import { useEffect, useState } from 'react';
@@ -53,6 +53,20 @@ export default function Dashboard() {
             </p>
             <div className={styles.cardAction}>
               Open Scraper <ArrowRight size={16} />
+            </div>
+          </Link>
+
+          {/* Sherlock Username Hunter */}
+          <Link href="/sherlock" className={styles.dashboardCard}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
+              <UserSearch size={32} />
+            </div>
+            <h2 className={styles.cardTitle}>Sherlock OSINT</h2>
+            <p className={styles.cardDesc}>
+              Hunt usernames across 400+ social networks & online platforms. Discover digital footprints in real-time.
+            </p>
+            <div className={styles.cardAction}>
+              Start Hunting <ArrowRight size={16} />
             </div>
           </Link>
 

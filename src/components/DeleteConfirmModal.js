@@ -1,6 +1,6 @@
 'use client';
 import { useEffect } from 'react';
-import { Trash2, X, AlertTriangle, ExternalLink, Hash, HelpCircle, Calendar, FileText } from 'lucide-react';
+import { Trash2, X, ExternalLink, Hash, HelpCircle, Calendar, FileText, AtSign, CheckCircle } from 'lucide-react';
 
 export default function DeleteConfirmModal({
   isOpen,
@@ -22,6 +22,7 @@ export default function DeleteConfirmModal({
 
   if (!isOpen || !item) return null;
 
+  const isSherlock = !!item.username;
   const questionsCount = item.jumlah_pertanyaan ?? (item.questions ? item.questions.length : null);
   const formattedDate = item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID', {
     dateStyle: 'medium',
@@ -43,19 +44,41 @@ export default function DeleteConfirmModal({
 
         {/* Info Box yang ingin dihapus */}
         <div className="confirm-info-box">
-          <div className="confirm-info-row">
-            <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <FileText size={14} /> Judul Form
-            </span>
-            <span className="confirm-info-value" style={{ color: '#60a5fa' }}>
-              {item.title || 'Untitled Form'}
-            </span>
-          </div>
+          {isSherlock ? (
+            <>
+              <div className="confirm-info-row">
+                <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AtSign size={14} /> Username
+                </span>
+                <span className="confirm-info-value" style={{ color: '#34d399', fontWeight: 700 }}>
+                  @{item.username}
+                </span>
+              </div>
+
+              <div className="confirm-info-row">
+                <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle size={14} /> Ditemukan
+                </span>
+                <span className="confirm-info-value">
+                  {item.foundCount ?? 0} dari {item.totalSites ?? 0} situs
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="confirm-info-row">
+              <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FileText size={14} /> Judul Form
+              </span>
+              <span className="confirm-info-value" style={{ color: '#60a5fa' }}>
+                {item.title || 'Untitled Form'}
+              </span>
+            </div>
+          )}
 
           {item.slug && (
             <div className="confirm-info-row">
               <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Hash size={14} /> Slug
+                <Hash size={14} /> Slug / ID
               </span>
               <span className="confirm-info-value" style={{ fontFamily: 'monospace', color: 'var(--accent)' }}>
                 {item.slug}
@@ -63,7 +86,7 @@ export default function DeleteConfirmModal({
             </div>
           )}
 
-          {questionsCount !== null && (
+          {!isSherlock && questionsCount !== null && (
             <div className="confirm-info-row">
               <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <HelpCircle size={14} /> Total Soal
@@ -110,7 +133,9 @@ export default function DeleteConfirmModal({
 
         {/* Warning Note */}
         <div className="confirm-warning-note">
-          ⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.
+          {isSherlock
+            ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
+            : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
         </div>
 
         {/* Liquid Capsule Buttons */}

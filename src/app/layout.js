@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'MS Forms Scraper',
-  description: 'Premium MS Forms extraction tool powered by Puppeteer & MongoDB.',
+  title: 'ScraperHouse - Data Intelligence & OSINT Suite',
+  description: 'All-in-one data extraction and OSINT suite featuring MS Forms Scraper and Sherlock Username Hunter.',
   icons: {
     icon: '/logo.png',
   },

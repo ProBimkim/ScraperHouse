@@ -2,7 +2,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 export default function Navbar({ errorCount = 0 }) {
   const pathname = usePathname();
@@ -19,10 +19,6 @@ export default function Navbar({ errorCount = 0 }) {
       <div className="nav-links">
         <Link href="/" className={`nav-link ${pathname === '/' ? 'active' : ''}`}>
           Dashboard
-        </Link>
-        <Link href="/ms-forms" className={`nav-link ${pathname.startsWith('/ms-forms') ? 'active' : ''}`}>
-          <Search size={16} />
-          MS Forms
         </Link>
         <Link href="/errors" className={`nav-link ${pathname.startsWith('/errors') ? 'active' : ''}`}>
           <AlertTriangle size={16} />
