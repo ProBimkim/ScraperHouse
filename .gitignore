@@ -50,3 +50,8 @@ AGENT.md
 agent.md
 CLAUDE.md
 claude.md
+
+# Security audit outputs
+security-audit-skill/
+audit-output/
+
