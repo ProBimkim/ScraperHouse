@@ -36,8 +36,15 @@ export async function PATCH() {
 }
 
 // DELETE — permanently delete ALL error history
-export async function DELETE() {
+export async function DELETE(req) {
   try {
+    const url = new URL(req.url);
+    const password = url.searchParams.get('password');
+
+    if (password !== process.env.APP_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
+    }
+
     await connectToDatabase();
     const result = await GlobalErrorLog.deleteMany({});
     return NextResponse.json({ deletedCount: result.deletedCount });

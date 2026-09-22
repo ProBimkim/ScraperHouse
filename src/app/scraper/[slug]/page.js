@@ -46,15 +46,15 @@ export default function ScraperResult({ params }) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfProgress, setPdfProgress] = useState('');
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (password) => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/scraper/${slug}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scraper/${slug}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
       if (res.ok) {
         router.push('/ms-forms');
       } else {
         const errData = await res.json();
-        setActionToast(errData.error || 'Gagal menghapus data.');
+        setActionToast(errData.error || 'Gagal menghapus data. Pastikan password benar.');
         setTimeout(() => setActionToast(null), 4000);
         setIsDeleting(false);
         setShowDeleteModal(false);

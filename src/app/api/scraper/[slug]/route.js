@@ -21,6 +21,13 @@ export async function GET(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const { slug } = await params;
+    const url = new URL(req.url);
+    const password = url.searchParams.get('password');
+
+    if (password !== process.env.APP_PASSWORD) {
+      return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
+    }
+
     await connectToDatabase();
     
     const result = await ScrapeResult.findOneAndDelete({ slug });

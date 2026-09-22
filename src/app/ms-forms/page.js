@@ -79,20 +79,20 @@ export default function Home() {
     setItemToDelete(item);
   };
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (password) => {
     if (!itemToDelete) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/scraper/${itemToDelete.slug}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scraper/${itemToDelete.slug}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
       if (res.ok) {
         setItemToDelete(null);
         fetchHistory();
         setToast('✅ Data berhasil dihapus.');
         setTimeout(() => setToast(null), 3000);
       } else {
-        const data = await res.json();
-        setToast(data.error || 'Gagal menghapus data');
-        setTimeout(() => setToast(null), 4000);
+        const errData = await res.json();
+        setToast(errData.error || '❌ Gagal menghapus data. Pastikan password benar.');
+        setTimeout(() => setToast(null), 3000);
       }
     } catch (err) {
       setToast(err.message);

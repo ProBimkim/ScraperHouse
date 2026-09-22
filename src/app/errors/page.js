@@ -10,6 +10,7 @@ export default function ErrorMonitorPage() {
   const [resolving, setResolving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [password, setPassword] = useState('');
   const [toast, setToast] = useState(null);
   const [showResolved, setShowResolved] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all'); // all, msforms
@@ -83,7 +84,7 @@ export default function ErrorMonitorPage() {
     setDeleting(true);
     setConfirmDelete(false);
     try {
-      const res = await fetch('/api/errors', {
+      const res = await fetch(`/api/errors?password=${encodeURIComponent(password)}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -91,12 +92,17 @@ export default function ErrorMonitorPage() {
         setToast(`🗑️ ${data.deletedCount} error(s) permanently deleted`);
         setTimeout(() => setToast(null), 3000);
         fetchErrors();
+      } else {
+        const errData = await res.json();
+        setToast(`Failed: ${errData.error || 'Pastikan password benar.'}`);
+        setTimeout(() => setToast(null), 3000);
       }
     } catch (err) {
       setToast(`Failed: ${err.message}`);
       setTimeout(() => setToast(null), 3000);
     }
     setDeleting(false);
+    setPassword('');
   };
 
   const resolveOne = async (id) => {
@@ -257,18 +263,28 @@ export default function ErrorMonitorPage() {
 
       {/* Confirm Delete Modal */}
       {confirmDelete && (
-        <div className="confirm-overlay" onClick={() => setConfirmDelete(false)}>
+        <div className="confirm-overlay" onClick={() => { setConfirmDelete(false); setPassword(''); }}>
           <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-icon">🗑️</div>
             <h3 className="confirm-title">Hapus Semua Error History?</h3>
             <p className="confirm-desc">
               Tindakan ini akan <strong>menghapus permanen</strong> semua {errors.length} error log dari database. Data tidak bisa dikembalikan.
             </p>
-            <div className="confirm-actions">
-              <button type="button" className="btn-liquid-cancel" onClick={() => setConfirmDelete(false)}>
+            <p style={{ marginTop: '10px', fontSize: '0.9rem' }}>Masukkan password aplikasi untuk melanjutkan:</p>
+            <input 
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="APP_PASSWORD"
+              className="search-input"
+              style={{ marginTop: '5px', width: '100%' }}
+              disabled={deleting}
+            />
+            <div className="confirm-actions" style={{ marginTop: '15px' }}>
+              <button type="button" className="btn-liquid-cancel" onClick={() => { setConfirmDelete(false); setPassword(''); }}>
                 Batal
               </button>
-              <button type="button" className="btn-liquid-delete" onClick={deleteAllErrors}>
+              <button type="button" className="btn-liquid-delete" onClick={deleteAllErrors} disabled={deleting || !password}>
                 <Trash2 size={16} />
                 Ya, Hapus Semua
               </button>

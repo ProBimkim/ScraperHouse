@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Trash2, X, ExternalLink, Hash, HelpCircle, Calendar, FileText, AtSign, CheckCircle } from 'lucide-react';
 
 export default function DeleteConfirmModal({
@@ -9,6 +9,7 @@ export default function DeleteConfirmModal({
   isDeleting = false,
   item = null,
 }) {
+  const [password, setPassword] = useState('');
   // Tutup modal ketika tombol Escape ditekan
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -131,11 +132,23 @@ export default function DeleteConfirmModal({
           )}
         </div>
 
-        {/* Warning Note */}
+        {/* Password Verification Note */}
         <div className="confirm-warning-note">
-          {isSherlock
-            ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
-            : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
+          <p style={{ marginBottom: '8px' }}>
+            {isSherlock
+              ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
+              : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
+          </p>
+          <p>Masukkan password aplikasi untuk melanjutkan:</p>
+          <input 
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="APP_PASSWORD"
+            className="search-input"
+            style={{ marginTop: '10px', width: '100%' }}
+            disabled={isDeleting}
+          />
         </div>
 
         {/* Liquid Capsule Buttons */}
@@ -143,7 +156,10 @@ export default function DeleteConfirmModal({
           <button
             type="button"
             className="btn-liquid-cancel"
-            onClick={onClose}
+            onClick={() => {
+              setPassword('');
+              onClose();
+            }}
             disabled={isDeleting}
           >
             <X size={16} />
@@ -152,8 +168,8 @@ export default function DeleteConfirmModal({
           <button
             type="button"
             className="btn-liquid-delete"
-            onClick={onConfirm}
-            disabled={isDeleting}
+            onClick={() => onConfirm(password)}
+            disabled={isDeleting || !password}
           >
             <Trash2 size={16} />
             {isDeleting ? 'Menghapus...' : 'Konfirmasi Hapus'}

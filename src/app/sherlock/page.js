@@ -185,12 +185,12 @@ export default function SherlockPage() {
     setItemToDelete(item);
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (password) => {
     if (!itemToDelete) return;
     setIsDeleting(true);
     try {
       const id = itemToDelete.slug || itemToDelete._id;
-      const res = await fetch(`/api/sherlock/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sherlock/${id}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
       if (res.ok) {
         setHistory((prev) => prev.filter((h) => h.slug !== itemToDelete.slug && h._id !== itemToDelete._id));
         if (currentSearch && (currentSearch.slug === itemToDelete.slug || currentSearch.id === itemToDelete._id)) {
@@ -200,7 +200,7 @@ export default function SherlockPage() {
         showToast('Hasil pencarian berhasil dihapus.', 'success');
       } else {
         const data = await res.json();
-        showToast(data.error || 'Gagal menghapus hasil pencarian.', 'error');
+        showToast(data.error || 'Gagal menghapus hasil pencarian. Pastikan password benar.', 'error');
       }
     } catch (err) {
       showToast(err.message || 'Gagal menghapus hasil pencarian.', 'error');

@@ -59,15 +59,15 @@ export default function SherlockDetailPage({ params }) {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (password) => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/sherlock/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sherlock/${id}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
       if (res.ok) {
         router.push('/sherlock');
       } else {
         const errData = await res.json();
-        showToast(errData.error || 'Gagal menghapus data', 'error');
+        showToast(errData.error || 'Gagal menghapus data. Pastikan password benar.', 'error');
         setIsDeleting(false);
         setShowDeleteModal(false);
       }
