@@ -213,7 +213,7 @@ export default function ScraperResult({ params }) {
       renderContainer.id = 'pdf-render-container';
       renderContainer.style.position = 'absolute';
       renderContainer.style.top = '0';
-      renderContainer.style.left = '0';
+      renderContainer.style.left = '-9999px';
       renderContainer.style.width = '750px';
       renderContainer.style.background = '#ffffff';
       renderContainer.style.zIndex = '-99999';
