@@ -7,6 +7,7 @@ import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import fetch from 'node-fetch';
 import { getAIAnswers } from './groqAgent';
+import { runOcrOnQuestions } from './ocrEngine';
 
 // --- Proxy Configuration ---
 // Set PROXY_LIST di Vercel env vars, pisahkan dengan koma (,)
@@ -610,6 +611,16 @@ export async function runScraper(url, slug) {
       // Proceed with original URLs if upload fails
     }
     // --- Cloudinary Upload Logic End ---
+
+    // --- OCR Processing Logic Start ---
+    try {
+      result.steps.push({ step: 'ocr_processing', status: 'starting' });
+      const ocrStats = await runOcrOnQuestions(result.questions);
+      result.steps.push({ step: 'ocr_processing', status: 'ok', processed: ocrStats.processed, total: ocrStats.total });
+    } catch (ocrErr) {
+      result.steps.push({ step: 'ocr_processing', status: 'failed', message: ocrErr.message });
+    }
+    // --- OCR Processing Logic End ---
 
     // --- AI Answering Logic Start ---
     try {

@@ -692,6 +692,51 @@ h1, h2, h3, h4, h5, h6,
   border: 1px solid rgba(255,255,255,0.03);
 }
 
+/* ===== OCR Text Panel ===== */
+.ocr-panel {
+  margin-top: 12px;
+  background: rgba(20, 184, 166, 0.06);
+  border: 1px solid rgba(20, 184, 166, 0.2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.ocr-panel summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.08);
+  border-bottom: 1px solid rgba(20, 184, 166, 0.15);
+  transition: background 0.2s;
+  user-select: none;
+}
+.ocr-panel summary:hover {
+  background: rgba(20, 184, 166, 0.14);
+}
+.ocr-panel-content {
+  padding: 14px 16px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.ocr-inline {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: #5eead4;
+  opacity: 0.8;
+  line-height: 1.4;
+  font-style: italic;
+}
+
 /* ===== Steps Debug ===== */
 .steps-timeline {
   display: flex;

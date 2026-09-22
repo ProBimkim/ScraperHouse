@@ -11,11 +11,20 @@ export async function getAIAnswers(questions) {
   
   try {
     const formattedQuestions = questions.map((q, idx) => {
-      let qText = `ID: ${q.id}\nQuestion: ${q.title}\nType: ${q.type}\nChoices:\n`;
+      let qText = `ID: ${q.id}\nQuestion: ${q.title}\nType: ${q.type}\n`;
+      if (q.imageOcrText) {
+        qText += `[Image OCR Text]: ${q.imageOcrText}\n`;
+      }
+      qText += `Choices:\n`;
       if (q.choices && q.choices.length > 0) {
         q.choices.forEach((c, cIdx) => {
           const text = typeof c === 'object' ? c.text : c;
-          qText += `  [${cIdx}] ${text || '[Image/No Text]'}\n`;
+          const ocrText = typeof c === 'object' ? c.ocrText : null;
+          let choiceLine = `  [${cIdx}] ${text || '[Image/No Text]'}`;
+          if (ocrText) {
+            choiceLine += ` | OCR: ${ocrText}`;
+          }
+          qText += choiceLine + '\n';
         });
       } else {
         qText += `  [Text Input / No choices provided]\n`;

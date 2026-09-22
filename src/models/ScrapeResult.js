@@ -8,6 +8,7 @@ const QuestionSchema = new mongoose.Schema({
   choices: [mongoose.Schema.Types.Mixed],
   imageUrl: String,
   originalImageUrl: String,
+  imageOcrText: String,
 }, { _id: false });
 
 const ErrorLogSchema = new mongoose.Schema({

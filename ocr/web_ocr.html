@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCR Soal Gambar</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #17212b; background: #f4f7fb; }
+    body { margin: 0; }
+    main { max-width: 1100px; margin: auto; padding: 28px 18px 56px; }
+    h1 { margin: 0 0 6px; font-size: clamp(26px, 5vw, 38px); }
+    header p { margin: 0 0 22px; color: #5b6875; }
+    .panel, .card { background: white; border: 1px solid #d9e1ea; border-radius: 14px; box-shadow: 0 6px 22px #2135470d; }
+    .panel { padding: 16px; margin-bottom: 16px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button, input[type="search"] { border: 1px solid #c7d1dc; border-radius: 9px; padding: 10px 13px; font: inherit; background: white; }
+    button { cursor: pointer; background: #1f6feb; color: white; border-color: #1f6feb; font-weight: 600; }
+    button.secondary { background: #eef4fb; color: #17324d; border-color: #c7d9eb; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    .dropzone { border: 2px dashed #8eb2d3; border-radius: 12px; padding: 26px 18px; text-align: center; color: #52606d; margin-top: 14px; background: #f8fbff; }
+    .dropzone.over { background: #eaf4ff; border-color: #1f6feb; }
+    .progress { height: 9px; background: #e8edf2; border-radius: 9px; overflow: hidden; margin-top: 14px; }
+    #bar { width: 0; height: 100%; background: #1f6feb; transition: width .15s; }
+    #status { min-height: 22px; margin: 10px 0 0; color: #52606d; }
+    #results { display: grid; gap: 16px; }
+    .card { padding: 16px; }
+    .card h2 { margin: 0 0 12px; font-size: 18px; color: #17324d; }
+    .card img { display: block; max-width: 100%; max-height: 430px; object-fit: contain; margin: 0 auto 14px; border-top: 1px solid #e1e7ed; border-bottom: 1px solid #e1e7ed; }
+    .card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; }
+    .empty { color: #697887; text-align: center; padding: 30px 0; }
+    .hint { font-size: 13px; color: #697887; }
+    @media print {
+      body { background: white; }
+      main { max-width: none; padding: 0; }
+      header, .panel, .empty { display: none !important; }
+      #results { display: block; }
+      .card { box-shadow: none; border: 0; border-radius: 0; padding: 0; margin: 0 0 24px; break-after: page; }
+      .card:last-child { break-after: auto; }
+      .card img { max-height: 440px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>OCR Soal Gambar</h1>
+    <p>Pilih banyak gambar, cari teksnya, atau cetak menjadi PDF lengkap dengan gambar soal asli.</p>
+  </header>
+
+  <section class="panel">
+    <div class="toolbar">
+      <button id="chooseFiles">Pilih gambar</button>
+      <button id="chooseFolder" class="secondary">Pilih folder</button>
+      <input id="files" type="file" accept="image/*" multiple hidden>
+      <input id="folder" type="file" accept="image/*" multiple webkitdirectory hidden>
+      <button id="download" class="secondary" disabled>Download TXT</button>
+      <button id="print" class="secondary" disabled>Cetak / Simpan PDF</button>
+      <button id="reset" class="secondary" disabled>Reset</button>
+    </div>
+    <div id="dropzone" class="dropzone">Atau seret gambar ke sini</div>
+    <div class="toolbar" style="margin-top:14px">
+      <input id="search" type="search" placeholder="Cari kata, misalnya: kristal, kubus, jarak" style="flex:1; min-width:240px">
+      <span id="count" class="hint">Belum ada gambar</span>
+    </div>
+    <div class="progress"><div id="bar"></div></div>
+    <p id="status">Model OCR akan diunduh otomatis saat pertama kali dipakai.</p>
+    <p class="hint">OCR berjalan di browser. Koneksi internet diperlukan saat pertama kali memuat engine dan model bahasa.</p>
+  </section>
+
+  <section id="results"><p class="empty">Hasil OCR akan muncul di sini.</p></section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const state = { records: [], worker: null, urls: [], busy: false };
+
+  function natural(a, b) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function setStatus(message, progress = null) {
+    $('status').textContent = message;
+    if (progress !== null) $('bar').style.width = `${Math.max(0, Math.min(100, progress))}%`;
+  }
+
+  function fileName(file) {
+    return file.webkitRelativePath || file.name;
+  }
+
+  function render() {
+    const query = $('search').value.trim().toLowerCase();
+    const visible = state.records
+      .filter(({ file, text }) => !query || `${fileName(file)}\n${text}`.toLowerCase().includes(query))
+      .sort((a, b) => natural(fileName(a.file), fileName(b.file)));
+    const results = $('results');
+    results.replaceChildren();
+    if (!visible.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = state.records.length ? 'Tidak ada hasil yang cocok.' : 'Hasil OCR akan muncul di sini.';
+      results.append(empty);
+    }
+    visible.forEach(({ file, text }) => {
+      const card = document.createElement('article');
+      card.className = 'card';
+      const title = document.createElement('h2');
+      title.textContent = fileName(file);
+      const image = new Image();
+      image.src = state.urls.find((item) => item.file === file)?.url || URL.createObjectURL(file);
+      image.alt = fileName(file);
+      const pre = document.createElement('pre');
+      pre.textContent = text || '[Tidak ada teks yang terbaca]';
+      card.append(title, image, pre);
+      results.append(card);
+    });
+    $('count').textContent = `${visible.length}/${state.records.length} gambar`;
+    $('download').disabled = !state.records.length || state.busy;
+    $('print').disabled = !state.records.length || state.busy;
+    $('reset').disabled = !state.records.length || state.busy;
+  }
+
+  async function getWorker() {
+    if (state.worker) return state.worker;
+    setStatus('Memuat model OCR Indonesia...', 0);
+    state.worker = await Tesseract.createWorker('ind+eng', 1, {
+      logger: (message) => {
+        if (message.status) setStatus(`Model OCR: ${message.status}`, (message.progress || 0) * 20);
+      },
+    });
+    return state.worker;
+  }
+
+  async function processFiles(fileList) {
+    const files = [...fileList].filter((file) => file.type.startsWith('image/'));
+    if (!files.length) return;
+    state.busy = true;
+    state.records = [];
+    state.urls.forEach(({ url }) => URL.revokeObjectURL(url));
+    state.urls = files.map((file) => ({ file, url: URL.createObjectURL(file) }));
+    render();
+    try {
+      const worker = await getWorker();
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        setStatus(`OCR ${index + 1}/${files.length}: ${fileName(file)}`, (index / files.length) * 100);
+        try {
+          const result = await worker.recognize(file);
+          state.records.push({ file, text: result.data.text.trim() });
+        } catch (error) {
+          state.records.push({ file, text: `[OCR gagal: ${error.message}]` });
+        }
+        render();
+        setStatus(`Selesai ${index + 1}/${files.length}: ${fileName(file)}`, ((index + 1) / files.length) * 100);
+      }
+      setStatus(`Selesai: ${files.length} gambar diproses.`, 100);
+    } catch (error) {
+      setStatus(`Gagal memuat OCR: ${error.message}`);
+    } finally {
+      state.busy = false;
+      render();
+    }
+  }
+
+  function downloadText() {
+    const text = [...state.records]
+      .sort((a, b) => natural(fileName(a.file), fileName(b.file)))
+      .map(({ file, text }) => `===== ${fileName(file)} =====\n${text || '[Tidak ada teks yang terbaca]'}`)
+      .join('\n\n') + '\n';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    link.download = 'hasil_ocr.txt';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function reset() {
+    if (state.worker) await state.worker.terminate();
+    state.worker = null;
+    state.urls.forEach(({ url }) => URL.revokeObjectURL(url));
+    state.urls = [];
+    state.records = [];
+    $('files').value = '';
+    $('folder').value = '';
+    $('bar').style.width = '0%';
+    setStatus('Model OCR akan diunduh otomatis saat pertama kali dipakai.');
+    render();
+  }
+
+  $('chooseFiles').onclick = () => $('files').click();
+  $('chooseFolder').onclick = () => $('folder').click();
+  $('files').onchange = (event) => processFiles(event.target.files);
+  $('folder').onchange = (event) => processFiles(event.target.files);
+  $('download').onclick = downloadText;
+  $('print').onclick = () => window.print();
+  $('reset').onclick = reset;
+  $('search').oninput = render;
+  $('dropzone').ondragover = (event) => { event.preventDefault(); $('dropzone').classList.add('over'); };
+  $('dropzone').ondragleave = () => $('dropzone').classList.remove('over');
+  $('dropzone').ondrop = (event) => {
+    event.preventDefault();
+    $('dropzone').classList.remove('over');
+    processFiles(event.dataTransfer.files);
+  };
+</script>
+</body>
+</html>

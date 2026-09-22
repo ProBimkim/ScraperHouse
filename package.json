@@ -25,7 +25,8 @@
     "puppeteer": "^24.43.1",
     "puppeteer-core": "^24.43.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "eslint": "^9",
