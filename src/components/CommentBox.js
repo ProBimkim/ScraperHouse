@@ -75,7 +75,7 @@ export default function CommentBox({ slug, questionId, initialText = '' }) {
   if (isEditing) {
     return (
       <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed var(--border)' }}>
-        <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 10px 10px 24px' }}>
           <textarea
             ref={textareaRef}
             className="input-field"
@@ -84,38 +84,49 @@ export default function CommentBox({ slug, questionId, initialText = '' }) {
             onChange={(e) => setTempText(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={status === 'saving'}
-            style={{ resize: 'vertical', minHeight: '80px', width: '100%', padding: '0', background: 'transparent' }}
+            rows={1}
+            style={{ 
+              flex: 1, 
+              resize: 'none', 
+              background: 'transparent', 
+              border: 'none', 
+              color: 'var(--text-main)', 
+              fontSize: '1.05rem', 
+              outline: 'none', 
+              padding: '12px 0',
+              minHeight: '24px',
+              overflow: 'hidden'
+            }}
           />
           
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-            <span style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Tekan <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>Ctrl + Enter</kbd> untuk simpan
-            </span>
-            
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {status === 'error' && (
-              <span style={{ color: 'var(--error)', fontSize: '0.85rem' }}>⚠️ Gagal menyimpan</span>
+              <span style={{ color: 'var(--error)', fontSize: '0.85rem', marginRight: '8px' }}>⚠️ Gagal</span>
             )}
-
             <button 
-              className="btn btn-ghost btn-sm" 
+              className="btn btn-ghost" 
               onClick={handleCancel}
               disabled={status === 'saving'}
+              style={{ padding: '12px 20px' }}
             >
               Batal
             </button>
             <button 
-              className="btn btn-primary btn-sm" 
+              className="btn btn-primary" 
               onClick={handleSave}
               disabled={status === 'saving'}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px' }}
             >
               {status === 'saving' ? (
-                <><Loader2 size={14} className="spinner" /> Menyimpan...</>
+                <><Loader2 size={18} className="spinner" /> Menyimpan...</>
               ) : (
-                <><Check size={14} /> Simpan</>
+                <><Check size={18} /> Simpan</>
               )}
             </button>
           </div>
+        </div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'right' }}>
+          Tekan <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>Ctrl + Enter</kbd> untuk simpan
         </div>
       </div>
     );
