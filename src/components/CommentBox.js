@@ -74,25 +74,26 @@ export default function CommentBox({ slug, questionId, initialText = '' }) {
 
   if (isEditing) {
     return (
-      <div className="comment-section">
-        <div className="comment-box-edit">
+      <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed var(--border)' }}>
+        <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <textarea
             ref={textareaRef}
-            className="comment-textarea"
+            className="input-field"
             placeholder="Tambahkan catatan atau komentar untuk soal ini..."
             value={tempText}
             onChange={(e) => setTempText(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={status === 'saving'}
+            style={{ resize: 'vertical', minHeight: '80px', width: '100%', padding: '0', background: 'transparent' }}
           />
           
-          <div className="comment-actions">
-            <span className="comment-status" style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Tekan <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>Ctrl + Enter</kbd> untuk simpan
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+            <span style={{ marginRight: 'auto', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Tekan <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)' }}>Ctrl + Enter</kbd> untuk simpan
             </span>
             
             {status === 'error' && (
-              <span className="comment-status error">⚠️ Gagal menyimpan</span>
+              <span style={{ color: 'var(--error)', fontSize: '0.85rem' }}>⚠️ Gagal menyimpan</span>
             )}
 
             <button 
@@ -121,16 +122,17 @@ export default function CommentBox({ slug, questionId, initialText = '' }) {
   }
 
   return (
-    <div className="comment-section">
+    <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px dashed var(--border)' }}>
       <div 
-        className="comment-box-view"
+        className="glass-card"
+        style={{ padding: '12px 16px', cursor: 'pointer', transition: 'all 0.2s ease' }}
         onClick={() => setIsEditing(true)}
       >
-        <div className="comment-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
           <MessageSquare size={14} />
           <span>Komentar & Catatan</span>
           {status === 'saved' && (
-            <span className="comment-status saved" style={{ marginLeft: 'auto' }}>
+            <span style={{ marginLeft: 'auto', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
               <Check size={14} /> Tersimpan
             </span>
           )}
@@ -142,9 +144,11 @@ export default function CommentBox({ slug, questionId, initialText = '' }) {
         </div>
         
         {text ? (
-          <div className="comment-text">{text}</div>
+          <div style={{ fontSize: '0.95rem', lineHeight: '1.5', color: 'var(--text-main)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {text}
+          </div>
         ) : (
-          <div className="comment-placeholder">
+          <div style={{ fontSize: '0.95rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
             Belum ada komentar. Klik di sini untuk menambahkan catatan...
           </div>
         )}
