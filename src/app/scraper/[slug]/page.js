@@ -44,6 +44,7 @@ export default function ScraperResult({ params }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionToast, setActionToast] = useState(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState('');
 
   const handleDeleteConfirm = async () => {
     setIsDeleting(true);
@@ -178,76 +179,57 @@ export default function ScraperResult({ params }) {
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
-    let tempContainer = null;
+    setPdfProgress('Memulai...');
+    let renderContainer = null;
     try {
       const html2pdfModule = await import('html2pdf.js');
       const html2pdf = html2pdfModule.default || html2pdfModule;
       const questions = data?.questions || [];
       const aiAnswers = data?.aiAnswers || [];
       
-      // Convert images to base64 for embedding in PDF without CORS issues
-      const imageToBase64 = async (url) => {
-        try {
-          let cleanUrl = url;
-          if (cleanUrl.includes('res.cloudinary.com')) {
-            cleanUrl = cleanUrl.replace(/\/v\d+\//, '/');
-          }
-          let res = await fetch(cleanUrl);
-          if (!res.ok) {
-            res = await fetch(`/api/proxy-image?url=${encodeURIComponent(cleanUrl)}`);
-          }
-          if (!res.ok) return null;
-          const blob = await res.blob();
-          return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          });
-        } catch {
-          try {
-            const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
-            if (!res.ok) return null;
-            const blob = await res.blob();
-            return new Promise((resolve) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.onerror = () => resolve(null);
-              reader.readAsDataURL(blob);
-            });
-          } catch {
-            return null;
-          }
-        }
+      const docTitle = data?.title || 'Kumpulan Soal OCR';
+
+      const opt = {
+        margin: [10, 12, 10, 12],
+        filename: `soal_ocr_${slug || 'export'}.pdf`,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: {
+          scale: 1.5, // Reduced from 2 for better memory/performance
+          useCORS: true,
+          logging: false,
+          windowWidth: 800,
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'portrait',
+        },
       };
 
-      // Pre-load all images
-      const imagePromises = [];
-      const imageMap = {};
-      
-      questions.forEach((q, qIdx) => {
-        if (q.imageUrl) {
-          imagePromises.push(
-            imageToBase64(q.imageUrl).then(b64 => { if (b64) imageMap[`q_${qIdx}`] = b64; })
-          );
+      let worker = html2pdf().set(opt);
+
+      // Create a persistent hidden container for rendering chunks
+      renderContainer = document.createElement('div');
+      renderContainer.id = 'pdf-render-container';
+      renderContainer.style.position = 'absolute';
+      renderContainer.style.top = '-9999px';
+      renderContainer.style.left = '0';
+      renderContainer.style.width = '750px';
+      renderContainer.style.background = '#ffffff';
+      document.body.appendChild(renderContainer);
+
+      const getProxiedUrl = (url) => {
+        if (!url) return '';
+        let cleanUrl = url;
+        if (cleanUrl.includes('res.cloudinary.com')) {
+          cleanUrl = cleanUrl.replace(/\/v\d+\//, '/');
         }
-        q.choices?.forEach((c, cIdx) => {
-          const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
-          if (cImg) {
-            imagePromises.push(
-              imageToBase64(cImg).then(b64 => { if (b64) imageMap[`q_${qIdx}_c_${cIdx}`] = b64; })
-            );
-          }
-        });
-      });
-      
-      await Promise.allSettled(imagePromises);
+        return `/api/proxy-image?url=${encodeURIComponent(cleanUrl)}`;
+      };
 
-      // Build HTML for PDF matching soal_ocr.pdf layout
-      const docTitle = data?.title || 'Kumpulan Soal OCR';
-      let pagesHtml = '';
-
-      questions.forEach((q, qIdx) => {
+      for (let i = 0; i < questions.length; i++) {
+        setPdfProgress(`Memproses halaman ${i + 1} dari ${questions.length}...`);
+        const q = questions[i];
         const aiAnswer = aiAnswers.find(a => a.questionId === q.id);
         
         let choicesHtml = '';
@@ -266,9 +248,9 @@ export default function ScraperResult({ params }) {
                       <span style="font-weight: 700; color: ${isAiChoice ? '#16a34a' : '#1d68a7'}; min-width: 20px;">${String.fromCharCode(65 + cIdx)}.</span>
                       <div style="flex: 1;">
                         <span style="${isAiChoice ? 'font-weight: 600; color: #14532d;' : ''}">${escapeHtml(text || '[Pilihan Gambar]')}</span>
-                        ${cImg && imageMap[`q_${qIdx}_c_${cIdx}`] ? `
+                        ${cImg ? `
                           <div style="margin-top: 6px;">
-                            <img src="${imageMap[`q_${qIdx}_c_${cIdx}`]}" alt="Pilihan" style="max-height: 80px; max-width: 150px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px;" />
+                            <img src="${getProxiedUrl(cImg)}" alt="Pilihan" style="max-height: 80px; max-width: 150px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px;" crossorigin="anonymous" />
                           </div>
                         ` : ''}
                         ${ocrText ? `<div style="font-size: 10.5px; color: #0f766e; margin-top: 4px; font-style: italic;">OCR: ${escapeHtml(ocrText)}</div>` : ''}
@@ -303,12 +285,12 @@ export default function ScraperResult({ params }) {
           `;
         }
 
-        pagesHtml += `
+        const questionHtml = `
           <div class="pdf-card" style="padding: 16px 20px 24px 20px; background: #ffffff; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #17212b;">
-            <!-- Header Soal (sesuai soal_ocr.pdf) -->
+            <!-- Header Soal -->
             <div style="margin-bottom: 8px;">
               <h2 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #17324d; line-height: 1.3;">
-                ${qIdx + 1}. ${escapeHtml(q.title || `question_${qIdx + 1}.jpg`)}
+                ${i + 1}. ${escapeHtml(q.title || `question_${i + 1}.jpg`)}
               </h2>
               <div style="font-size: 11px; color: #5b6875; margin-bottom: 8px;">
                 ${q.imageUrl ? 'Gambar soal asli (diagram geometri/teks dipertahankan)' : 'Teks Soal'}
@@ -319,13 +301,13 @@ export default function ScraperResult({ params }) {
             </div>
 
             <!-- Gambar Soal Asli -->
-            ${q.imageUrl && imageMap[`q_${qIdx}`] ? `
+            ${q.imageUrl ? `
               <div style="text-align: center; margin: 0 0 14px 0;">
-                <img src="${imageMap[`q_${qIdx}`]}" alt="Soal ${qIdx + 1}" style="display: block; max-width: 100%; max-height: 380px; object-fit: contain; margin: 0 auto; border-top: 1px solid #e1e7ed; border-bottom: 1px solid #e1e7ed;" />
+                <img src="${getProxiedUrl(q.imageUrl)}" alt="Soal ${i + 1}" style="display: block; max-width: 100%; max-height: 380px; object-fit: contain; margin: 0 auto; border-top: 1px solid #e1e7ed; border-bottom: 1px solid #e1e7ed;" crossorigin="anonymous" />
               </div>
             ` : ''}
 
-            <!-- Teks OCR (sesuai soal_ocr.pdf) -->
+            <!-- Teks OCR -->
             ${q.imageOcrText ? `
               <div style="margin: 12px 0 0 0;">
                 <div style="font-size: 11.5px; font-weight: 700; color: #1d68a7; margin-bottom: 6px;">
@@ -338,81 +320,55 @@ export default function ScraperResult({ params }) {
             <!-- Pilihan Jawaban -->
             ${choicesHtml}
 
-            <!-- Kunci Jawaban & Pembahasan AI (diberi jarak & pembeda jelas) -->
+            <!-- Kunci Jawaban & Pembahasan AI -->
             ${aiAnswerHtml}
 
-            <!-- Footer Halaman (sesuai soal_ocr.pdf) -->
+            <!-- Footer Halaman -->
             <div style="margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
               <span>${escapeHtml(docTitle)}</span>
-              <span>Halaman ${qIdx + 1} dari ${questions.length}</span>
+              <span>Halaman ${i + 1} dari ${questions.length}</span>
             </div>
           </div>
-          ${qIdx < questions.length - 1 ? '<div class="html2pdf__page-break" style="page-break-after: always; break-after: page;"></div>' : ''}
         `;
-      });
 
-      // Create temporary container attached to DOM
-      tempContainer = document.createElement('div');
-      tempContainer.id = 'pdf-render-container';
-      tempContainer.style.position = 'absolute';
-      tempContainer.style.top = '0';
-      tempContainer.style.left = '0';
-      tempContainer.style.width = '750px';
-      tempContainer.style.background = '#ffffff';
-      tempContainer.style.zIndex = '-99999';
-      tempContainer.style.pointerEvents = 'none';
-      tempContainer.innerHTML = pagesHtml;
-      document.body.appendChild(tempContainer);
+        renderContainer.innerHTML = questionHtml;
 
-      // Wait for all images inside container to decode
-      const imgs = Array.from(tempContainer.querySelectorAll('img'));
-      await Promise.all(
-        imgs.map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(res => {
-            img.onload = res;
-            img.onerror = res;
-          });
-        })
-      );
+        // Wait for all images in the current chunk to load
+        const imgs = Array.from(renderContainer.querySelectorAll('img'));
+        await Promise.all(
+          imgs.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(res => {
+              img.onload = res;
+              img.onerror = res;
+            });
+          })
+        );
 
-      // Give a tiny moment for layout calculation
-      await new Promise(r => setTimeout(r, 150));
+        // Give a tiny moment for layout calculation
+        await new Promise(r => setTimeout(r, 50));
 
-      const opt = {
-        margin: [10, 12, 10, 12],
-        filename: `soal_ocr_${slug || 'export'}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 800,
-        },
-        jsPDF: {
-          unit: 'mm',
-          format: 'a4',
-          orientation: 'portrait',
-        },
-        pagebreak: {
-          mode: ['css', 'legacy'],
-          after: '.html2pdf__page-break',
-        },
-      };
+        if (i === 0) {
+          worker = worker.from(renderContainer).toPdf();
+        } else {
+          worker = worker.get('pdf').then(pdf => {
+            pdf.addPage();
+          }).from(renderContainer).toContainer().toCanvas().toPdf();
+        }
+      }
 
-      // Directly download PDF (no print dialog!)
-      await html2pdf().set(opt).from(tempContainer).save();
+      setPdfProgress('Menyimpan file...');
+      await worker.save();
 
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Gagal membuat file PDF: ' + (err.message || 'Terjadi kesalahan'));
     } finally {
-      if (tempContainer && tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer);
+      if (renderContainer && renderContainer.parentNode) {
+        renderContainer.parentNode.removeChild(renderContainer);
       }
       setIsGeneratingPdf(false);
+      setPdfProgress('');
     }
   };
 
@@ -525,7 +481,7 @@ export default function ScraperResult({ params }) {
                 disabled={isGeneratingPdf || !data?.questions?.length}
               >
                 {isGeneratingPdf ? (
-                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Membuat PDF...</>
+                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {pdfProgress || 'Membuat PDF...'}</>
                 ) : (
                   <><FileText size={16} /> Download PDF</>
                 )}
