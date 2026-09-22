@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import CommentBox from '@/components/CommentBox';
 
 const FallbackImage = ({ primarySrc, fallbackSrc, alt, style }) => {
   const [imgSrc, setImgSrc] = useState(primarySrc);
@@ -621,6 +622,12 @@ export default function ScraperResult({ params }) {
                     </div>
                   );
                 })()}
+                
+                <CommentBox
+                  slug={slug}
+                  questionId={q.id}
+                  initialText={data?.comments?.find(c => c.questionId === q.id)?.text || ''}
+                />
               </div>
             ))
           ) : (

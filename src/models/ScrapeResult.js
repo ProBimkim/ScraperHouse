@@ -42,6 +42,11 @@ const ScrapeResultSchema = new mongoose.Schema({
     answer: String,
     answerIndex: Number,
   }],
+  comments: [{
+    questionId: { type: String, required: true },
+    text: { type: String, default: '' },
+    updatedAt: { type: Date, default: Date.now }
+  }],
   rawApiResponse: { type: mongoose.Schema.Types.Mixed },
   errors: [ErrorLogSchema],
   scrapeSteps: [StepSchema],
