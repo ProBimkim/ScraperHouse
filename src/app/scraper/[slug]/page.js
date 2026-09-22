@@ -212,10 +212,12 @@ export default function ScraperResult({ params }) {
       renderContainer = document.createElement('div');
       renderContainer.id = 'pdf-render-container';
       renderContainer.style.position = 'absolute';
-      renderContainer.style.top = '-9999px';
+      renderContainer.style.top = '0';
       renderContainer.style.left = '0';
       renderContainer.style.width = '750px';
       renderContainer.style.background = '#ffffff';
+      renderContainer.style.zIndex = '-99999';
+      renderContainer.style.pointerEvents = 'none';
       document.body.appendChild(renderContainer);
 
       const getProxiedUrl = (url) => {
@@ -331,10 +333,12 @@ export default function ScraperResult({ params }) {
           </div>
         `;
 
-        renderContainer.innerHTML = questionHtml;
+        const qContainer = document.createElement('div');
+        qContainer.innerHTML = questionHtml;
+        renderContainer.appendChild(qContainer);
 
         // Wait for all images in the current chunk to load
-        const imgs = Array.from(renderContainer.querySelectorAll('img'));
+        const imgs = Array.from(qContainer.querySelectorAll('img'));
         await Promise.all(
           imgs.map(img => {
             if (img.complete) return Promise.resolve();
@@ -349,11 +353,11 @@ export default function ScraperResult({ params }) {
         await new Promise(r => setTimeout(r, 50));
 
         if (i === 0) {
-          worker = worker.from(renderContainer).toPdf();
+          worker = worker.from(qContainer).toPdf();
         } else {
           worker = worker.get('pdf').then(pdf => {
             pdf.addPage();
-          }).from(renderContainer).toContainer().toCanvas().toPdf();
+          }).from(qContainer).toContainer().toCanvas().toPdf();
         }
       }
 
