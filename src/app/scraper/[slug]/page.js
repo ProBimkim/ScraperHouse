@@ -234,6 +234,7 @@ export default function ScraperResult({ params }) {
         setPdfProgress(`Memproses halaman ${i + 1} dari ${questions.length}...`);
         const q = questions[i];
         const aiAnswer = aiAnswers.find(a => a.questionId === q.id);
+        const comment = data?.comments?.find(c => c.questionId === q.id)?.text;
         
         let choicesHtml = '';
         if (q.choices && q.choices.length > 0) {
@@ -288,6 +289,20 @@ export default function ScraperResult({ params }) {
           `;
         }
 
+        let commentHtml = '';
+        if (comment) {
+          commentHtml = `
+            <div style="margin-top: 24px; padding: 14px 18px; background: #fffbeb; border: 1.5px solid #fde68a; border-left: 5px solid #f59e0b; border-radius: 8px;">
+              <div style="font-size: 12px; font-weight: 800; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                💬 Catatan
+              </div>
+              <div style="font-size: 13px; color: #92400e; white-space: pre-wrap; line-height: 1.5; font-weight: 500;">
+                ${escapeHtml(comment)}
+              </div>
+            </div>
+          `;
+        }
+
         const questionHtml = `
           <div class="pdf-card" style="padding: 16px 20px 24px 20px; background: #ffffff; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #17212b;">
             <!-- Header Soal -->
@@ -325,6 +340,9 @@ export default function ScraperResult({ params }) {
 
             <!-- Kunci Jawaban & Pembahasan AI -->
             ${aiAnswerHtml}
+
+            <!-- Komentar / Catatan -->
+            ${commentHtml}
 
             <!-- Footer Halaman -->
             <div style="margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
