@@ -178,18 +178,24 @@ export default function ScraperResult({ params }) {
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
+    let tempContainer = null;
     try {
+      const html2pdfModule = await import('html2pdf.js');
+      const html2pdf = html2pdfModule.default || html2pdfModule;
       const questions = data?.questions || [];
       const aiAnswers = data?.aiAnswers || [];
       
-      // Convert images to base64 for embedding in PDF
+      // Convert images to base64 for embedding in PDF without CORS issues
       const imageToBase64 = async (url) => {
         try {
           let cleanUrl = url;
           if (cleanUrl.includes('res.cloudinary.com')) {
             cleanUrl = cleanUrl.replace(/\/v\d+\//, '/');
           }
-          const res = await fetch(cleanUrl);
+          let res = await fetch(cleanUrl);
+          if (!res.ok) {
+            res = await fetch(`/api/proxy-image?url=${encodeURIComponent(cleanUrl)}`);
+          }
           if (!res.ok) return null;
           const blob = await res.blob();
           return new Promise((resolve) => {
@@ -199,7 +205,19 @@ export default function ScraperResult({ params }) {
             reader.readAsDataURL(blob);
           });
         } catch {
-          return null;
+          try {
+            const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+            if (!res.ok) return null;
+            const blob = await res.blob();
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+          } catch {
+            return null;
+          }
         }
       };
 
@@ -225,331 +243,175 @@ export default function ScraperResult({ params }) {
       
       await Promise.allSettled(imagePromises);
 
-      // Build HTML for PDF
-      let questionsHtml = '';
+      // Build HTML for PDF matching soal_ocr.pdf layout
+      const docTitle = data?.title || 'Kumpulan Soal OCR';
+      let pagesHtml = '';
+
       questions.forEach((q, qIdx) => {
         const aiAnswer = aiAnswers.find(a => a.questionId === q.id);
         
-        questionsHtml += `
-          <div class="question-block">
-            <div class="q-header-pdf">
-              <span class="q-num">${qIdx + 1}.</span>
-              <span class="q-text">${escapeHtml(q.title || '[Tanpa Judul]')}</span>
-              <span class="q-tags">
-                <span class="tag tag-type">${escapeHtml(q.type || '')}</span>
-                ${q.required ? '<span class="tag tag-required">Required</span>' : ''}
-              </span>
-            </div>
-        `;
-        
-        // Question image
-        if (q.imageUrl && imageMap[`q_${qIdx}`]) {
-          questionsHtml += `<div class="q-image"><img src="${imageMap[`q_${qIdx}`]}" alt="Question Image" /></div>`;
-        }
-        
-        // OCR text
-        if (q.imageOcrText) {
-          questionsHtml += `<div class="ocr-box"><strong>📝 Teks OCR:</strong> ${escapeHtml(q.imageOcrText)}</div>`;
-        }
-        
-        // Choices
+        let choicesHtml = '';
         if (q.choices && q.choices.length > 0) {
-          questionsHtml += '<div class="choices">';
-          q.choices.forEach((c, cIdx) => {
-            const text = typeof c === 'object' && c !== null ? c.text : c;
-            const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
-            const ocrText = typeof c === 'object' && c !== null ? c.ocrText : null;
-            const isCorrect = aiAnswer && aiAnswer.answerIndex === cIdx;
-            
-            questionsHtml += `
-              <div class="choice ${isCorrect ? 'choice-correct' : ''}">
-                <span class="choice-letter">${String.fromCharCode(65 + cIdx)}.</span>
-                <span>${escapeHtml(text || '[Gambar]')}</span>
-                ${isCorrect ? '<span class="correct-badge">✓ AI Answer</span>' : ''}
-            `;
-            
-            if (cImg && imageMap[`q_${qIdx}_c_${cIdx}`]) {
-              questionsHtml += `<div class="choice-img"><img src="${imageMap[`q_${qIdx}_c_${cIdx}`]}" alt="Option" /></div>`;
-            }
-            if (ocrText) {
-              questionsHtml += `<div class="choice-ocr">OCR: ${escapeHtml(ocrText)}</div>`;
-            }
-            
-            questionsHtml += '</div>';
-          });
-          questionsHtml += '</div>';
-        }
-        
-        // AI Answer
-        if (aiAnswer) {
-          questionsHtml += `
-            <div class="ai-box">
-              <div class="ai-title">🤖 Jawaban AI</div>
-              <div class="ai-answer">${escapeHtml(aiAnswer.answer || '')}</div>
-              ${aiAnswer.thinking ? `<div class="ai-thinking">${escapeHtml(aiAnswer.thinking)}</div>` : ''}
+          choicesHtml = `
+            <div style="margin-top: 16px;">
+              <div style="font-size: 11.5px; font-weight: 700; color: #17324d; margin-bottom: 8px;">Pilihan Jawaban:</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${q.choices.map((c, cIdx) => {
+                  const text = typeof c === 'object' && c !== null ? c.text : c;
+                  const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
+                  const ocrText = typeof c === 'object' && c !== null ? c.ocrText : null;
+                  const isAiChoice = aiAnswer && (aiAnswer.answerIndex === cIdx || (aiAnswer.answer && text && aiAnswer.answer.toLowerCase().includes(String(text).toLowerCase())));
+                  return `
+                    <div style="display: flex; align-items: flex-start; gap: 8px; font-size: 11.5px; color: #1e293b; padding: 6px 10px; background: ${isAiChoice ? '#f0fdf4' : '#ffffff'}; border: 1px solid ${isAiChoice ? '#86efac' : '#e2e8f0'}; border-radius: 6px;">
+                      <span style="font-weight: 700; color: ${isAiChoice ? '#16a34a' : '#1d68a7'}; min-width: 20px;">${String.fromCharCode(65 + cIdx)}.</span>
+                      <div style="flex: 1;">
+                        <span style="${isAiChoice ? 'font-weight: 600; color: #14532d;' : ''}">${escapeHtml(text || '[Pilihan Gambar]')}</span>
+                        ${cImg && imageMap[`q_${qIdx}_c_${cIdx}`] ? `
+                          <div style="margin-top: 6px;">
+                            <img src="${imageMap[`q_${qIdx}_c_${cIdx}`]}" alt="Pilihan" style="max-height: 80px; max-width: 150px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px;" />
+                          </div>
+                        ` : ''}
+                        ${ocrText ? `<div style="font-size: 10.5px; color: #0f766e; margin-top: 4px; font-style: italic;">OCR: ${escapeHtml(ocrText)}</div>` : ''}
+                      </div>
+                      ${isAiChoice ? '<span style="font-size: 9.5px; font-weight: 700; background: #22c55e; color: #ffffff; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;">Pilihan AI</span>' : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
             </div>
           `;
         }
-        
-        questionsHtml += '</div>';
+
+        let aiAnswerHtml = '';
+        if (aiAnswer) {
+          aiAnswerHtml = `
+            <div style="margin-top: 24px; padding: 14px 18px; background: #f0fdf4; border: 1.5px solid #86efac; border-left: 5px solid #16a34a; border-radius: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                <span style="font-size: 12px; font-weight: 800; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px;">✓ Jawaban AI</span>
+                ${aiAnswer.confidence ? `<span style="font-size: 10px; font-weight: 700; background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 12px; border: 1px solid #bbf7d0;">Keyakinan: ${aiAnswer.confidence}%</span>` : ''}
+              </div>
+              <div style="font-size: 13.5px; font-weight: 700; color: #14532d; margin-bottom: 6px; line-height: 1.4;">
+                ${escapeHtml(aiAnswer.answer || 'Belum ada jawaban')}
+              </div>
+              ${aiAnswer.thinking ? `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #bbf7d0; font-size: 11px; line-height: 1.5; color: #374151;">
+                  <strong style="color: #166534;">Pembahasan:</strong><br />
+                  <span style="white-space: pre-wrap;">${escapeHtml(aiAnswer.thinking)}</span>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }
+
+        pagesHtml += `
+          <div class="pdf-card" style="padding: 16px 20px 24px 20px; background: #ffffff; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #17212b;">
+            <!-- Header Soal (sesuai soal_ocr.pdf) -->
+            <div style="margin-bottom: 8px;">
+              <h2 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #17324d; line-height: 1.3;">
+                ${qIdx + 1}. ${escapeHtml(q.title || `question_${qIdx + 1}.jpg`)}
+              </h2>
+              <div style="font-size: 11px; color: #5b6875; margin-bottom: 8px;">
+                ${q.imageUrl ? 'Gambar soal asli (diagram geometri/teks dipertahankan)' : 'Teks Soal'}
+                ${q.required ? ' • <span style="color: #dc2626; font-weight: 600;">Wajib</span>' : ''}
+                ${q.type ? ` • <span>${escapeHtml(q.type)}</span>` : ''}
+              </div>
+              <div style="border-top: 1px solid #d9e1ea; margin: 0 0 14px 0;"></div>
+            </div>
+
+            <!-- Gambar Soal Asli -->
+            ${q.imageUrl && imageMap[`q_${qIdx}`] ? `
+              <div style="text-align: center; margin: 0 0 14px 0;">
+                <img src="${imageMap[`q_${qIdx}`]}" alt="Soal ${qIdx + 1}" style="display: block; max-width: 100%; max-height: 380px; object-fit: contain; margin: 0 auto; border-top: 1px solid #e1e7ed; border-bottom: 1px solid #e1e7ed;" />
+              </div>
+            ` : ''}
+
+            <!-- Teks OCR (sesuai soal_ocr.pdf) -->
+            ${q.imageOcrText ? `
+              <div style="margin: 12px 0 0 0;">
+                <div style="font-size: 11.5px; font-weight: 700; color: #1d68a7; margin-bottom: 6px;">
+                  Teks OCR (bisa dicari/copy)
+                </div>
+                <div style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; line-height: 1.55; color: #17212b; white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">${escapeHtml(q.imageOcrText)}</div>
+              </div>
+            ` : ''}
+
+            <!-- Pilihan Jawaban -->
+            ${choicesHtml}
+
+            <!-- Kunci Jawaban & Pembahasan AI (diberi jarak & pembeda jelas) -->
+            ${aiAnswerHtml}
+
+            <!-- Footer Halaman (sesuai soal_ocr.pdf) -->
+            <div style="margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
+              <span>${escapeHtml(docTitle)}</span>
+              <span>Halaman ${qIdx + 1} dari ${questions.length}</span>
+            </div>
+          </div>
+          ${qIdx < questions.length - 1 ? '<div class="html2pdf__page-break" style="page-break-after: always; break-after: page;"></div>' : ''}
+        `;
       });
 
-      const htmlContent = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="utf-8">
-  <title>${escapeHtml(data?.title || 'Hasil Scraping')} - ScraperHouse</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      color: #1e293b;
-      background: #ffffff;
-      padding: 40px 48px;
-      line-height: 1.6;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    
-    .header {
-      margin-bottom: 36px;
-      padding-bottom: 24px;
-      border-bottom: 3px solid #3b82f6;
-    }
-    .header h1 {
-      font-size: 24px;
-      font-weight: 800;
-      color: #0f172a;
-      margin-bottom: 8px;
-    }
-    .header .meta {
-      font-size: 13px;
-      color: #64748b;
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    .header .meta span {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    
-    .question-block {
-      margin-bottom: 32px;
-      padding: 24px;
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      background: #fafbfc;
-      page-break-inside: avoid;
-    }
-    
-    .q-header-pdf {
-      margin-bottom: 16px;
-      display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .q-num {
-      font-size: 20px;
-      font-weight: 800;
-      color: #3b82f6;
-      min-width: 32px;
-    }
-    .q-text {
-      font-size: 16px;
-      font-weight: 600;
-      color: #0f172a;
-      flex: 1;
-      line-height: 1.5;
-    }
-    .q-tags { display: flex; gap: 6px; }
-    .tag {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 10px;
-      border-radius: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .tag-type {
-      background: #f1f5f9;
-      color: #64748b;
-      border: 1px solid #e2e8f0;
-    }
-    .tag-required {
-      background: #fef2f2;
-      color: #dc2626;
-      border: 1px solid #fecaca;
-    }
-    
-    .q-image {
-      margin: 14px 0;
-      text-align: center;
-    }
-    .q-image img {
-      max-width: 100%;
-      max-height: 360px;
-      object-fit: contain;
-      border-radius: 8px;
-      border: 1px solid #e2e8f0;
-    }
-    
-    .ocr-box {
-      margin: 12px 0;
-      padding: 12px 16px;
-      background: #f0fdfa;
-      border: 1px solid #99f6e4;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #0f766e;
-      line-height: 1.5;
-      white-space: pre-wrap;
-    }
-    
-    .choices {
-      margin-top: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .choice {
-      padding: 12px 16px;
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      font-size: 14px;
-      color: #334155;
-      display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .choice-letter {
-      font-weight: 700;
-      color: #3b82f6;
-      min-width: 24px;
-    }
-    .choice-correct {
-      border-color: #22c55e !important;
-      background: #f0fdf4 !important;
-      box-shadow: inset 0 0 0 1px #22c55e;
-    }
-    .correct-badge {
-      font-size: 11px;
-      font-weight: 800;
-      background: #22c55e;
-      color: white;
-      padding: 2px 8px;
-      border-radius: 10px;
-      margin-left: auto;
-      text-transform: uppercase;
-    }
-    .choice-img {
-      width: 100%;
-      margin-top: 8px;
-    }
-    .choice-img img {
-      max-width: 140px;
-      max-height: 140px;
-      border-radius: 6px;
-      border: 1px solid #e2e8f0;
-    }
-    .choice-ocr {
-      width: 100%;
-      font-size: 12px;
-      color: #0f766e;
-      font-style: italic;
-      margin-top: 4px;
-    }
-    
-    .ai-box {
-      margin-top: 20px;
-      padding: 16px;
-      background: linear-gradient(135deg, #faf5ff, #eef2ff);
-      border: 1px solid #c4b5fd;
-      border-radius: 10px;
-    }
-    .ai-title {
-      font-weight: 700;
-      font-size: 14px;
-      color: #7c3aed;
-      margin-bottom: 10px;
-    }
-    .ai-answer {
-      font-size: 15px;
-      font-weight: 600;
-      color: #1e1b4b;
-      margin-bottom: 8px;
-    }
-    .ai-thinking {
-      font-size: 12px;
-      color: #6b7280;
-      padding: 10px 12px;
-      background: rgba(0,0,0,0.03);
-      border-radius: 6px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-    }
-    
-    .footer {
-      margin-top: 40px;
-      padding-top: 16px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 12px;
-      color: #94a3b8;
-      text-align: center;
-    }
-    
-    @media print {
-      body { padding: 20px; }
-      .question-block { page-break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>${escapeHtml(data?.title || 'Hasil Scraping')}</h1>
-    <div class="meta">
-      <span>📋 ${questions.length} pertanyaan</span>
-      <span>🔗 ${escapeHtml(data?.slug || '')}</span>
-      <span>📅 ${new Date(data?.createdAt || Date.now()).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-    </div>
-    ${data?.description ? `<p style="margin-top:10px;font-size:14px;color:#475569">${escapeHtml(data.description)}</p>` : ''}
-  </div>
-  
-  ${questionsHtml}
-  
-  <div class="footer">
-    Dihasilkan oleh ScraperHouse • ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-  </div>
-</body>
-</html>`;
+      // Create temporary container attached to DOM
+      tempContainer = document.createElement('div');
+      tempContainer.id = 'pdf-render-container';
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.top = '0';
+      tempContainer.style.left = '0';
+      tempContainer.style.width = '750px';
+      tempContainer.style.background = '#ffffff';
+      tempContainer.style.zIndex = '-99999';
+      tempContainer.style.pointerEvents = 'none';
+      tempContainer.innerHTML = pagesHtml;
+      document.body.appendChild(tempContainer);
 
-      // Open in new window and trigger print (save as PDF)
-      const printWindow = window.open('', '_blank', 'width=900,height=700');
-      if (!printWindow) {
-        alert('Pop-up diblokir oleh browser. Izinkan pop-up untuk mendownload PDF.');
-        return;
-      }
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-      
-      // Wait for images to load then trigger print
-      printWindow.onload = () => {
-        setTimeout(() => {
-          printWindow.print();
-        }, 500);
+      // Wait for all images inside container to decode
+      const imgs = Array.from(tempContainer.querySelectorAll('img'));
+      await Promise.all(
+        imgs.map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise(res => {
+            img.onload = res;
+            img.onerror = res;
+          });
+        })
+      );
+
+      // Give a tiny moment for layout calculation
+      await new Promise(r => setTimeout(r, 150));
+
+      const opt = {
+        margin: [10, 12, 10, 12],
+        filename: `soal_ocr_${slug || 'export'}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollY: 0,
+          scrollX: 0,
+          windowWidth: 800,
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'portrait',
+        },
+        pagebreak: {
+          mode: ['css', 'legacy'],
+          after: '.html2pdf__page-break',
+        },
       };
-      
+
+      // Directly download PDF (no print dialog!)
+      await html2pdf().set(opt).from(tempContainer).save();
+
     } catch (err) {
       console.error('Error generating PDF:', err);
-      alert('Gagal membuat PDF.');
+      alert('Gagal membuat file PDF: ' + (err.message || 'Terjadi kesalahan'));
     } finally {
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
       setIsGeneratingPdf(false);
     }
   };
