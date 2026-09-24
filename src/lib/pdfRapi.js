@@ -438,11 +438,12 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
   y = ensureSpace(doc, y, imgH + 6);
   const imgX = PAGE.M + (PAGE.CW - imgW) / 2;
 
-  // Invisible OCR Text layer
+  // Invisible OCR Text layer (Searchable PDF trick)
   if (ocrText) {
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(1);
-    drawWrappedText(doc, cleanText(ocrText), imgX, y + 2, imgW, 1);
+    doc.setTextColor(255, 255, 255); // White text
+    doc.setFontSize(6); // Normal enough size so PDF readers index it (Chrome ignores tiny text)
+    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
+    doc.text(lines, imgX, y + 4);
   }
 
   try {
