@@ -438,6 +438,16 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
   y = ensureSpace(doc, y, imgH + 6);
   const imgX = PAGE.M + (PAGE.CW - imgW) / 2;
 
+  // Searchable PDF trick: Gambar teks asli DIBALIK gambar (sebelum gambar)
+  // Gunakan warna abu-abu (bukan putih murni) agar tidak diblokir filter anti-spam Chrome
+  // Saat gambar diletakkan di atasnya, teks ini akan tertutupi, tapi tetap bisa di-search
+  if (ocrText) {
+    doc.setTextColor(200, 200, 200); 
+    doc.setFontSize(8); 
+    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
+    doc.text(lines, imgX, y + 4);
+  }
+
   try {
     doc.addImage(imgData.dataUrl, imgData.format, imgX, y, imgW, imgH);
   } catch {
@@ -450,19 +460,6 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
     }
   }
 
-  // Invisible OCR Text layer (Searchable PDF trick)
-  // Harus digambar SETELAH gambar agar berada di atas (Z-index), 
-  // supaya bisa di-highlight/select oleh mouse di PDF viewer.
-  if (ocrText) {
-    doc.setTextColor(255, 255, 255); // Putih
-    doc.setFontSize(8); // Normal font size agar di-index
-    
-    // Gunakan opacity 0 agar benar-benar transparan, tetapi teksnya valid (Chrome sering menolak renderingMode 3)
-    doc.setGState(new doc.GState({ opacity: 0.01 }));
-    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
-    doc.text(lines, imgX, y + 4);
-    doc.setGState(new doc.GState({ opacity: 1 })); // Kembalikan opacity
-  }
   return y + imgH + 4;
 }
 
