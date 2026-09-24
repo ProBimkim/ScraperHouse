@@ -314,7 +314,7 @@ function buildCoverPage(doc, title, subtitle, classified, topicCounts) {
   doc.text('Dihasilkan oleh ScraperHouse', M, H - 30);
 }
 
-function buildTopicIndex(doc, classified, topicCounts) {
+function buildTopicIndex(doc, autoTable, classified, topicCounts) {
   doc.addPage();
   let y = PAGE.M;
 
@@ -346,7 +346,7 @@ function buildTopicIndex(doc, classified, topicCounts) {
   });
 
   // Menggunakan autoTable dari jspdf-autotable
-  doc.autoTable({
+  autoTable(doc, {
     startY: y,
     head: [['Topik', 'Nomor Soal']],
     body: tableBody,
@@ -384,7 +384,7 @@ function buildTopicIndex(doc, classified, topicCounts) {
   );
 }
 
-function buildQuestionList(doc, classified) {
+function buildQuestionList(doc, autoTable, classified) {
   doc.addPage();
   let y = PAGE.M;
 
@@ -401,7 +401,7 @@ function buildQuestionList(doc, classified) {
     getAnswerShort(q.aiAnswer, q.choices),
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: y,
     head: [['No', 'Topik', 'Ringkasan Soal', 'Jawaban']],
     body: tableBody,
@@ -749,7 +749,7 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
   }
 }
 
-function buildAnswerRecap(doc, classified) {
+function buildAnswerRecap(doc, autoTable, classified) {
   doc.addPage();
   let y = PAGE.M;
 
@@ -785,7 +785,7 @@ function buildAnswerRecap(doc, classified) {
     tableBody.push(row);
   }
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: y,
     body: tableBody,
     theme: 'plain',
@@ -844,7 +844,7 @@ function addFooters(doc, title) {
 export async function buildRapiPdf(data, onProgress) {
   // Dynamic import (client-side only)
   const { default: jsPDF } = await import('jspdf');
-  await import('jspdf-autotable');
+  const { default: autoTable } = await import('jspdf-autotable');
 
   const questions = data?.questions || [];
   const aiAnswers = data?.aiAnswers || [];
@@ -889,18 +889,18 @@ export async function buildRapiPdf(data, onProgress) {
 
   // ── Step 5: Indeks topik ──
   if (onProgress) onProgress('Membuat indeks topik...');
-  buildTopicIndex(doc, classified, topicCounts);
+  buildTopicIndex(doc, autoTable, classified, topicCounts);
 
   // ── Step 6: Daftar soal ──
   if (onProgress) onProgress('Membuat daftar soal...');
-  buildQuestionList(doc, classified);
+  buildQuestionList(doc, autoTable, classified);
 
   // ── Step 7: Kartu soal ──
   buildQuestionCards(doc, classified, imageMap, onProgress);
 
   // ── Step 8: Rekap kunci jawaban ──
   if (onProgress) onProgress('Membuat rekap kunci jawaban...');
-  buildAnswerRecap(doc, classified);
+  buildAnswerRecap(doc, autoTable, classified);
 
   // ── Step 9: Footer semua halaman ──
   if (onProgress) onProgress('Menambah footer halaman...');
