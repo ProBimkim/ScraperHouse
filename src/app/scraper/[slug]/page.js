@@ -429,11 +429,6 @@ export default function ScraperResult({ params }) {
                     <div className="q-title">
                       <span className="q-number">{qNo}.</span>
                       {q.title || `Soal ${qNo}`}
-                      {isMatchInOcr && (
-                        <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.75rem' }}>
-                          Cocok di teks gambar (OCR)
-                        </span>
-                      )}
                     </div>
                     <div className="q-meta">
                       <span className="q-tag q-tag-type">{q.type}</span>
@@ -446,22 +441,23 @@ export default function ScraperResult({ params }) {
                     </div>
                   )}
 
-                  {/* Teks OCR tidak terlihat secara visual di blok soal, tapi terletak di dalam blok agar langsung terdeteksi pencarian web & Ctrl+F */}
+                  {/* Teks OCR sepenuhnya tersembunyi (100% hidden), hanya gambar yang terlihat di layar, tapi tetap terindeks untuk pencarian & Ctrl+F */}
                   {q.imageOcrText && (
                     <div
                       className="ocr-hidden-searchable"
-                      aria-label="Teks OCR Gambar Soal"
+                      aria-hidden="true"
                       style={{
                         position: 'absolute',
                         top: 0,
                         left: 0,
                         width: '100%',
                         height: '100%',
-                        opacity: 0.0001,
+                        opacity: 0,
+                        color: 'transparent',
                         pointerEvents: 'none',
                         userSelect: 'text',
                         overflow: 'hidden',
-                        zIndex: 0,
+                        zIndex: -1,
                       }}
                     >
                       {q.imageOcrText}
@@ -491,11 +487,15 @@ export default function ScraperResult({ params }) {
                                 <FallbackImage primarySrc={cImg} fallbackSrc={cOrigImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
                                 {typeof c === 'object' && c.ocrText && (
                                   <span
+                                    aria-hidden="true"
                                     style={{
                                       position: 'absolute',
-                                      opacity: 0.0001,
+                                      opacity: 0,
+                                      color: 'transparent',
                                       pointerEvents: 'none',
                                       userSelect: 'text',
+                                      overflow: 'hidden',
+                                      zIndex: -1,
                                     }}
                                   >
                                     {c.ocrText}
