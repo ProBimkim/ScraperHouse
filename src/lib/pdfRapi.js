@@ -438,14 +438,6 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
   y = ensureSpace(doc, y, imgH + 6);
   const imgX = PAGE.M + (PAGE.CW - imgW) / 2;
 
-  // Invisible OCR Text layer (Searchable PDF trick)
-  if (ocrText) {
-    doc.setTextColor(255, 255, 255); // White text
-    doc.setFontSize(6); // Normal enough size so PDF readers index it (Chrome ignores tiny text)
-    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
-    doc.text(lines, imgX, y + 4);
-  }
-
   try {
     doc.addImage(imgData.dataUrl, imgData.format, imgX, y, imgW, imgH);
   } catch {
@@ -456,6 +448,16 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
       // Gambar tidak bisa ditambahkan, skip
       return y;
     }
+  }
+
+  // Invisible OCR Text layer (Searchable PDF trick)
+  // Harus digambar SETELAH gambar agar berada di atas (Z-index), 
+  // supaya bisa di-highlight/select oleh mouse di PDF viewer.
+  if (ocrText) {
+    doc.setFontSize(8); // Normal font size
+    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
+    // renderingMode: 3 is invisible (neither fill nor stroke)
+    doc.text(lines, imgX, y + 4, { renderingMode: 3 });
   }
   return y + imgH + 4;
 }
