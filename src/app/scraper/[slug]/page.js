@@ -561,7 +561,8 @@ export default function ScraperResult({ params }) {
                   initialText={data?.comments?.find(c => c.questionId === q.id)?.text || ''}
                 />
               </div>
-            ))
+            );
+          })
           ) : (
             <div className="glass-card empty-state" style={{ padding: '30px' }}>
               <div style={{ color: 'var(--text-muted)' }}>Tidak ada soal yang cocok dengan pencarian.</div>
