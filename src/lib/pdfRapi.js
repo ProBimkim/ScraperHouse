@@ -496,20 +496,14 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
 
     // ── OCR Text (full searchable) ──
     if (q.imageOcrText) {
-      y = ensureSpace(doc, y, 12);
-
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(...COLORS.LINK);
-      doc.text('Teks OCR (bisa dicari):', M + 4, y);
-      y += 4;
+      y = ensureSpace(doc, y, 8);
 
       doc.setFontSize(7.5);
-      doc.setFont('courier', 'normal');
-      doc.setTextColor(...COLORS.BLACK);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(156, 163, 175); // light gray so it's not distracting
       
       // Draw full text, allow pagination
-      y = drawWrappedText(doc, q.imageOcrText, M + 4, y, CW - 8, 3.5);
+      y = drawWrappedText(doc, cleanText(q.imageOcrText), M + 4, y, CW - 8, 3.5);
       y += 4;
     }
 
