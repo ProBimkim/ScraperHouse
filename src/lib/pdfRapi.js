@@ -420,7 +420,7 @@ function buildQuestionList(doc, autoTable, classified) {
  * Tambah gambar ke PDF, menghitung skala otomatis.
  * Return Y setelah gambar.
  */
-function addImageToPdf(doc, imgData, y, maxW, maxH) {
+function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
   let imgW = imgData.w * 0.264583; // px → mm (96dpi)
   let imgH = imgData.h * 0.264583;
 
@@ -437,6 +437,13 @@ function addImageToPdf(doc, imgData, y, maxW, maxH) {
 
   y = ensureSpace(doc, y, imgH + 6);
   const imgX = PAGE.M + (PAGE.CW - imgW) / 2;
+
+  // Invisible OCR Text layer
+  if (ocrText) {
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(1);
+    drawWrappedText(doc, cleanText(ocrText), imgX, y + 2, imgW, 1);
+  }
 
   try {
     doc.addImage(imgData.dataUrl, imgData.format, imgX, y, imgW, imgH);
@@ -488,22 +495,17 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
     y = drawWrappedText(doc, cleanText(q.title || `Soal ${no}`), M + 4, y, CW - 8, 4.5);
     y += 3;
 
-    // ── Question image ──
+    // ── Question image (with invisible OCR text layer) ──
     const qImgKey = `q_${q.index}`;
     if (imageMap[qImgKey]) {
-      y = addImageToPdf(doc, imageMap[qImgKey], y, CW - 16, 85);
-    }
-
-    // ── OCR Text (full searchable) ──
-    if (q.imageOcrText) {
+      y = addImageToPdf(doc, imageMap[qImgKey], y, CW - 16, 85, q.imageOcrText);
+    } else if (q.imageOcrText) {
+      // Fallback: If image missing but OCR exists, render visibly
       y = ensureSpace(doc, y, 8);
-
-      doc.setFontSize(7.5);
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(156, 163, 175); // light gray so it's not distracting
-      
-      // Draw full text, allow pagination
-      y = drawWrappedText(doc, cleanText(q.imageOcrText), M + 4, y, CW - 8, 3.5);
+      doc.setTextColor(...COLORS.BLACK);
+      y = drawWrappedText(doc, cleanText(q.imageOcrText), M + 4, y, CW - 8, 4);
       y += 4;
     }
 
@@ -567,18 +569,16 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
 
         y += 4;
 
-        // Choice image
+        // Choice image (with invisible OCR text layer)
         const cImgKey = `q_${q.index}_c_${ci}`;
+        const cOcrText = (typeof c === 'object' && c?.ocrText) ? c.ocrText : null;
         if (imageMap[cImgKey]) {
-          y = addImageToPdf(doc, imageMap[cImgKey], y, 45, 35);
-        }
-
-        // Choice OCR text
-        if (typeof c === 'object' && c?.ocrText) {
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'italic');
-          doc.setTextColor(...COLORS.TEAL);
-          doc.text(`OCR: ${cleanText(c.ocrText)}`, M + 20, y);
+          y = addImageToPdf(doc, imageMap[cImgKey], y, 45, 35, cOcrText);
+        } else if (cOcrText) {
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...COLORS.BLACK);
+          y = drawWrappedText(doc, cleanText(cOcrText), M + 20, y, CW - 32, 3.5);
           y += 4;
         }
 
