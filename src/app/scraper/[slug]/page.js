@@ -46,6 +46,32 @@ export default function ScraperResult({ params }) {
   const [actionToast, setActionToast] = useState(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfProgress, setPdfProgress] = useState('');
+  const [isProcessingOcr, setIsProcessingOcr] = useState(false);
+
+  const handleTriggerOcr = async () => {
+    setIsProcessingOcr(true);
+    try {
+      const res = await fetch(`/api/scraper/${slug}/ocr`, { method: 'POST' });
+      if (res.ok) {
+        const refreshed = await fetch(`/api/scraper/${slug}`);
+        if (refreshed.ok) {
+          const fresh = await refreshed.json();
+          setData(fresh);
+          setActionToast('✓ Seluruh gambar berhasil dipindai dengan OCR!');
+          setTimeout(() => setActionToast(null), 4000);
+        }
+      } else {
+        const err = await res.json();
+        setActionToast('Gagal scan OCR: ' + (err.error || 'Terjadi kesalahan'));
+        setTimeout(() => setActionToast(null), 4000);
+      }
+    } catch (e) {
+      setActionToast('Error: ' + e.message);
+      setTimeout(() => setActionToast(null), 4000);
+    } finally {
+      setIsProcessingOcr(false);
+    }
+  };
 
   const handleDeleteConfirm = async (password) => {
     setIsDeleting(true);
@@ -104,10 +130,18 @@ export default function ScraperResult({ params }) {
     return `badge ${map[status] || ''}`;
   };
 
-  const filteredQuestions = data?.questions?.filter(q => 
-    q.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    q.choices?.some(c => (typeof c === 'string' ? c : c.text)?.toLowerCase().includes(searchQuery.toLowerCase()))
-  ) || [];
+  const filteredQuestions = data?.questions?.filter(q => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    const matchTitle = q.title?.toLowerCase().includes(query);
+    const matchOcr = q.imageOcrText?.toLowerCase().includes(query);
+    const matchChoices = q.choices?.some(c => {
+      const text = typeof c === 'string' ? c : (c?.text || '');
+      const cOcr = typeof c === 'object' && c?.ocrText ? c.ocrText : '';
+      return text.toLowerCase().includes(query) || cOcr.toLowerCase().includes(query);
+    });
+    return matchTitle || matchOcr || matchChoices;
+  }) || [];
 
   const handleDownloadImages = async () => {
     setIsDownloading(true);
@@ -180,14 +214,35 @@ export default function ScraperResult({ params }) {
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
-    setPdfProgress('Mengambil data terbaru...');
+    setPdfProgress('Memeriksa kelengkapan data...');
     try {
+      // 1. Ambil data terbaru dari database
       const res = await fetch(`/api/scraper/${slug}`);
-      const freshData = res.ok ? await res.json() : data;
-      if (freshData) setData(freshData);
+      let currentData = res.ok ? await res.json() : data;
 
+      // 2. Cek apakah ada gambar soal yang belum di-OCR
+      const needsOcr = (currentData?.questions || []).some(
+        q => (q.imageUrl && !q.imageOcrText) || 
+             q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)
+      );
+
+      if (needsOcr) {
+        setPdfProgress('Memindai seluruh teks gambar dengan OCR (Tesseract)...');
+        const ocrRes = await fetch(`/api/scraper/${slug}/ocr`, { method: 'POST' });
+        if (ocrRes.ok) {
+          const refreshed = await fetch(`/api/scraper/${slug}`);
+          if (refreshed.ok) {
+            currentData = await refreshed.json();
+            setData(currentData); // Perbarui state agar tampilan web langsung punya teks OCR
+          }
+        }
+      } else {
+        if (currentData) setData(currentData);
+      }
+
+      // 3. Buat dokumen PDF rapi
       const { buildRapiPdf } = await import('@/lib/pdfRapi');
-      await buildRapiPdf(freshData || data, setPdfProgress);
+      await buildRapiPdf(currentData || data, setPdfProgress);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Gagal membuat file PDF: ' + (err.message || 'Terjadi kesalahan'));
@@ -301,6 +356,21 @@ export default function ScraperResult({ params }) {
                   <><FileText size={16} /> Download PDF</>
                 )}
               </button>
+
+              {data?.questions?.some(q => (q.imageUrl && !q.imageOcrText) || q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)) && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleTriggerOcr}
+                  disabled={isProcessingOcr || isGeneratingPdf}
+                  title="Pindai teks dari seluruh gambar soal menggunakan OCR"
+                >
+                  {isProcessingOcr ? (
+                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Memindai OCR...</>
+                  ) : (
+                    <>⚡ Scan Teks Gambar (OCR)</>
+                  )}
+                </button>
+              )}
             </div>
 
             <button
@@ -337,75 +407,127 @@ export default function ScraperResult({ params }) {
 
         {/* Search Bar */}
         {data?.questions?.length > 0 && (
-          <div className="glass-card" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', padding: '12px 24px' }}>
-            <Search size={18} color="var(--text-muted)" style={{ marginRight: '12px' }} />
-            <input 
-              type="text" 
-              placeholder="Cari soal atau pilihan ganda..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1rem', outline: 'none' }}
-            />
+          <div style={{ marginBottom: '20px' }}>
+            <div className="glass-card" style={{ display: 'flex', alignItems: 'center', padding: '12px 24px' }}>
+              <Search size={18} color="var(--text-muted)" style={{ marginRight: '12px' }} />
+              <input 
+                type="text" 
+                placeholder="Cari kata kunci (judul, pilihan, atau teks gambar)..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1rem', outline: 'none' }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div style={{ marginTop: '8px', padding: '0 8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                Ditemukan <strong>{filteredQuestions.length}</strong> dari {data.questions.length} soal untuk &ldquo;{searchQuery}&rdquo;
+              </div>
+            )}
           </div>
         )}
 
         {/* Questions */}
         {data?.questions?.length > 0 ? (
           filteredQuestions.length > 0 ? (
-            filteredQuestions.map((q, idx) => (
-              <div key={idx} className="glass-card question-card">
-                <div className="q-header">
-                  <div className="q-title">
-                    <span className="q-number">{data.questions.indexOf(q) + 1}.</span>
-                    {q.title}
-                  </div>
-                  <div className="q-meta">
-                    <span className="q-tag q-tag-type">{q.type}</span>
-                    {q.required && <span className="q-tag q-tag-required">Required</span>}
-                  </div>
-                </div>
-                {q.imageUrl && (
-                  <div style={{ margin: '16px 0' }}>
-                    <FallbackImage primarySrc={q.imageUrl} fallbackSrc={q.originalImageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
-                  </div>
-                )}
-                {q.imageOcrText && (
-                  <details className="ocr-panel">
-                    <summary>📝 Teks OCR dari Gambar</summary>
-                    <div className="ocr-panel-content">{q.imageOcrText}</div>
-                  </details>
-                )}
-                {q.choices?.length > 0 && (
-                  <ul className="choice-list">
-                    {q.choices.map((c, ci) => {
-                      const text = typeof c === 'object' && c !== null ? c.text : c;
-                      const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
-                      const cOrigImg = typeof c === 'object' && c !== null ? c.originalImageUrl : null;
-                      
-                      const aiAnswer = data?.aiAnswers?.find(a => a.questionId === q.id);
-                      const isCorrect = aiAnswer && aiAnswer.answerIndex === ci;
+            filteredQuestions.map((q, idx) => {
+              const qIndex = data.questions.indexOf(q);
+              const qNo = qIndex + 1;
+              const isMatchInOcr = searchQuery && q.imageOcrText?.toLowerCase().includes(searchQuery.toLowerCase().trim());
 
-                      return (
-                        <li key={ci} className={`choice-item ${isCorrect ? 'choice-item-correct' : ''}`}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>
-                              {text || (cImg ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>[Image Option]</span> : '')}
-                            </span>
-                            {isCorrect && <span className="choice-correct-badge">✓ AI Answer</span>}
-                          </div>
-                          {cImg && (
-                            <div style={{ marginTop: '8px' }}>
-                              <FallbackImage primarySrc={cImg} fallbackSrc={cOrigImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
-                              {typeof c === 'object' && c.ocrText && (
-                                <span className="ocr-inline">OCR: {c.ocrText}</span>
-                              )}
+              return (
+                <div key={qIndex} id={`soal-${qNo}`} className="glass-card question-card" style={{ position: 'relative' }}>
+                  <div className="q-header">
+                    <div className="q-title">
+                      <span className="q-number">{qNo}.</span>
+                      {q.title || `Soal ${qNo}`}
+                      {isMatchInOcr && (
+                        <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.75rem' }}>
+                          Cocok di teks gambar (OCR)
+                        </span>
+                      )}
+                    </div>
+                    <div className="q-meta">
+                      <span className="q-tag q-tag-type">{q.type}</span>
+                      {q.required && <span className="q-tag q-tag-required">Required</span>}
+                    </div>
+                  </div>
+                  {q.imageUrl && (
+                    <div style={{ margin: '16px 0' }}>
+                      <FallbackImage primarySrc={q.imageUrl} fallbackSrc={q.originalImageUrl} alt="Question Image" style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                    </div>
+                  )}
+
+                  {/* Teks OCR tidak terlihat secara visual di blok soal, tapi terletak di dalam blok agar langsung terdeteksi pencarian web & Ctrl+F */}
+                  {q.imageOcrText && (
+                    <div
+                      className="ocr-hidden-searchable"
+                      aria-label="Teks OCR Gambar Soal"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0.0001,
+                        pointerEvents: 'none',
+                        userSelect: 'text',
+                        overflow: 'hidden',
+                        zIndex: 0,
+                      }}
+                    >
+                      {q.imageOcrText}
+                    </div>
+                  )}
+
+                  {q.choices?.length > 0 && (
+                    <ul className="choice-list">
+                      {q.choices.map((c, ci) => {
+                        const text = typeof c === 'object' && c !== null ? c.text : c;
+                        const cImg = typeof c === 'object' && c !== null ? c.imageUrl : null;
+                        const cOrigImg = typeof c === 'object' && c !== null ? c.originalImageUrl : null;
+                        
+                        const aiAnswer = data?.aiAnswers?.find(a => a.questionId === q.id);
+                        const isCorrect = aiAnswer && aiAnswer.answerIndex === ci;
+
+                        return (
+                          <li key={ci} className={`choice-item ${isCorrect ? 'choice-item-correct' : ''}`}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>
+                                {text || (cImg ? <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>[Image Option]</span> : '')}
+                              </span>
+                              {isCorrect && <span className="choice-correct-badge">✓ AI Answer</span>}
                             </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                            {cImg && (
+                              <div style={{ marginTop: '8px' }}>
+                                <FallbackImage primarySrc={cImg} fallbackSrc={cOrigImg} alt="Option Image" style={{ maxWidth: '150px', maxHeight: '150px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                                {typeof c === 'object' && c.ocrText && (
+                                  <span
+                                    style={{
+                                      position: 'absolute',
+                                      opacity: 0.0001,
+                                      pointerEvents: 'none',
+                                      userSelect: 'text',
+                                    }}
+                                  >
+                                    {c.ocrText}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 {data?.aiAnswers?.find(a => a.questionId === q.id) && (() => {
                   const aiAnswer = data.aiAnswers.find(a => a.questionId === q.id);
                   return (
