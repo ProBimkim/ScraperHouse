@@ -454,10 +454,14 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
   // Harus digambar SETELAH gambar agar berada di atas (Z-index), 
   // supaya bisa di-highlight/select oleh mouse di PDF viewer.
   if (ocrText) {
-    doc.setFontSize(8); // Normal font size
+    doc.setTextColor(255, 255, 255); // Putih
+    doc.setFontSize(8); // Normal font size agar di-index
+    
+    // Gunakan opacity 0 agar benar-benar transparan, tetapi teksnya valid (Chrome sering menolak renderingMode 3)
+    doc.setGState(new doc.GState({ opacity: 0.01 }));
     const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
-    // renderingMode: 3 is invisible (neither fill nor stroke)
-    doc.text(lines, imgX, y + 4, { renderingMode: 3 });
+    doc.text(lines, imgX, y + 4);
+    doc.setGState(new doc.GState({ opacity: 1 })); // Kembalikan opacity
   }
   return y + imgH + 4;
 }
