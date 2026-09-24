@@ -17,6 +17,8 @@
     "groq-sdk": "^1.6.0",
     "html2pdf.js": "^0.14.0",
     "https-proxy-agent": "^9.1.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "jszip": "^3.10.1",
     "lucide-react": "^1.35.0",
     "mermaid": "^11.17.2",
