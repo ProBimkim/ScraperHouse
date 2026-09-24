@@ -12,20 +12,20 @@ const MAX_OCR_IMAGES = 150;   // Allow full quizzes (up to 150 images)
  * @param {Function} onProgress - Optional callback(processed, total)
  * @returns {Promise<{ processed: number, total: number }>} - OCR stats
  */
-export async function runOcrOnQuestions(questions, onProgress) {
+export async function runOcrOnQuestions(questions, onProgress, force = false) {
   if (!questions || questions.length === 0) {
     return { processed: 0, total: 0 };
   }
 
-  // Collect all image URLs that need OCR (only those missing OCR)
+  // Collect all image URLs that need OCR
   const tasks = [];
   for (const q of questions) {
-    if (q.imageUrl && !q.imageOcrText) {
+    if (q.imageUrl && (force || !q.imageOcrText)) {
       tasks.push({ target: q, field: 'imageOcrText', url: q.imageUrl });
     }
     if (q.choices && q.choices.length > 0) {
       for (const c of q.choices) {
-        if (typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText) {
+        if (typeof c === 'object' && c !== null && c.imageUrl && (force || !c.ocrText)) {
           tasks.push({ target: c, field: 'ocrText', url: c.imageUrl });
         }
       }

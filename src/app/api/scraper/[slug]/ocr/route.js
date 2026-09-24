@@ -6,6 +6,9 @@ import { runOcrOnQuestions } from '@/lib/ocrEngine';
 export async function POST(req, { params }) {
   try {
     const { slug } = await params;
+    const url = new URL(req.url);
+    const force = url.searchParams.get('force') === 'true';
+
     await connectToDatabase();
 
     const result = await ScrapeResult.findOne({ slug });
@@ -13,7 +16,7 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: 'Form not found' }, { status: 404 });
     }
 
-    const ocrStats = await runOcrOnQuestions(result.questions);
+    const ocrStats = await runOcrOnQuestions(result.questions, null, force);
     await ScrapeResult.updateOne(
       { slug },
       { $set: { questions: result.questions } }

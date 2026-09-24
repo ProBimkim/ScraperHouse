@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, use } from 'react';
-import { ArrowLeft, Loader2, ExternalLink, Search, Trash2, FileText } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Search, Trash2, FileText, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
@@ -50,19 +50,21 @@ export default function ScraperResult({ params }) {
 
   const handleTriggerOcr = async () => {
     setIsProcessingOcr(true);
+    setActionToast('Memulai scan OCR gambar untuk web...');
     try {
-      const res = await fetch(`/api/scraper/${slug}/ocr`, { method: 'POST' });
+      const res = await fetch(`/api/scraper/${slug}/ocr?force=true`, { method: 'POST' });
+      const resData = await res.json();
       if (res.ok) {
         const refreshed = await fetch(`/api/scraper/${slug}`);
         if (refreshed.ok) {
           const fresh = await refreshed.json();
           setData(fresh);
-          setActionToast('✓ Seluruh gambar berhasil dipindai dengan OCR!');
+          const ocrCount = fresh?.questions?.filter(q => q.imageOcrText)?.length || 0;
+          setActionToast(`✓ OCR Web selesai! ${ocrCount} soal siap dicari.`);
           setTimeout(() => setActionToast(null), 4000);
         }
       } else {
-        const err = await res.json();
-        setActionToast('Gagal scan OCR: ' + (err.error || 'Terjadi kesalahan'));
+        setActionToast('Gagal scan OCR: ' + (resData.error || 'Terjadi kesalahan'));
         setTimeout(() => setActionToast(null), 4000);
       }
     } catch (e) {
@@ -214,35 +216,14 @@ export default function ScraperResult({ params }) {
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
-    setPdfProgress('Memeriksa kelengkapan data...');
+    setPdfProgress('Mengambil data terbaru...');
     try {
-      // 1. Ambil data terbaru dari database
       const res = await fetch(`/api/scraper/${slug}`);
-      let currentData = res.ok ? await res.json() : data;
+      const freshData = res.ok ? await res.json() : data;
+      if (freshData) setData(freshData);
 
-      // 2. Cek apakah ada gambar soal yang belum di-OCR
-      const needsOcr = (currentData?.questions || []).some(
-        q => (q.imageUrl && !q.imageOcrText) || 
-             q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)
-      );
-
-      if (needsOcr) {
-        setPdfProgress('Memindai seluruh teks gambar dengan OCR (Tesseract)...');
-        const ocrRes = await fetch(`/api/scraper/${slug}/ocr`, { method: 'POST' });
-        if (ocrRes.ok) {
-          const refreshed = await fetch(`/api/scraper/${slug}`);
-          if (refreshed.ok) {
-            currentData = await refreshed.json();
-            setData(currentData); // Perbarui state agar tampilan web langsung punya teks OCR
-          }
-        }
-      } else {
-        if (currentData) setData(currentData);
-      }
-
-      // 3. Buat dokumen PDF rapi
       const { buildRapiPdf } = await import('@/lib/pdfRapi');
-      await buildRapiPdf(currentData || data, setPdfProgress);
+      await buildRapiPdf(freshData || data, setPdfProgress);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Gagal membuat file PDF: ' + (err.message || 'Terjadi kesalahan'));
@@ -357,20 +338,19 @@ export default function ScraperResult({ params }) {
                 )}
               </button>
 
-              {data?.questions?.some(q => (q.imageUrl && !q.imageOcrText) || q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)) && (
-                <button
-                  className="btn btn-secondary"
-                  onClick={handleTriggerOcr}
-                  disabled={isProcessingOcr || isGeneratingPdf}
-                  title="Pindai teks dari seluruh gambar soal menggunakan OCR"
-                >
-                  {isProcessingOcr ? (
-                    <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Memindai OCR...</>
-                  ) : (
-                    <>⚡ Scan Teks Gambar (OCR)</>
-                  )}
-                </button>
-              )}
+              <button
+                className="btn btn-primary"
+                style={{ background: 'rgba(168, 85, 247, 0.2)', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#d8b4fe' }}
+                onClick={handleTriggerOcr}
+                disabled={isProcessingOcr || isGeneratingPdf || !data?.questions?.some(q => q.imageUrl || q.choices?.some(c => typeof c === 'object' && c?.imageUrl))}
+                title="Mulai proses OCR untuk memindai teks pada gambar soal di web"
+              >
+                {isProcessingOcr ? (
+                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Memproses OCR...</>
+                ) : (
+                  <><Sparkles size={16} /> OCR</>
+                )}
+              </button>
             </div>
 
             <button
