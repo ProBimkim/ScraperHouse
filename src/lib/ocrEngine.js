@@ -1,7 +1,7 @@
 import { createWorker } from 'tesseract.js';
 
 const OCR_TIMEOUT_MS = 10000; // 10 seconds per image
-const MAX_OCR_IMAGES = 15;    // Limit to prevent Vercel timeout
+const MAX_OCR_IMAGES = 150;   // Allow full quizzes (up to 150 images)
 
 /**
  * Download an image from a URL and return it as a Buffer.

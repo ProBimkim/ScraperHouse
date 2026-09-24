@@ -103,9 +103,9 @@ function klasifikasiTopik(title, choices) {
  * Adaptasi dari ringkas() di pdf_rapi.py
  */
 function ringkasQuestion(q) {
-  const title = cleanText(q.title || '');
-  if (title.length <= 100) return title;
-  return title.substring(0, 97).trimEnd() + '...';
+  const text = cleanText(q.title) || cleanText(q.imageOcrText) || `Soal ${q.index + 1}`;
+  if (text.length <= 100) return text;
+  return text.substring(0, 97).trimEnd() + '...';
 }
 
 /** Format huruf pilihan: 0→A, 1→B, dst. */
@@ -420,7 +420,7 @@ function buildQuestionList(doc, autoTable, classified) {
  * Tambah gambar ke PDF, menghitung skala otomatis.
  * Return Y setelah gambar.
  */
-function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
+function addImageToPdf(doc, imgData, y, maxW, maxH) {
   let imgW = imgData.w * 0.264583; // px → mm (96dpi)
   let imgH = imgData.h * 0.264583;
 
@@ -437,16 +437,6 @@ function addImageToPdf(doc, imgData, y, maxW, maxH, ocrText = null) {
 
   y = ensureSpace(doc, y, imgH + 6);
   const imgX = PAGE.M + (PAGE.CW - imgW) / 2;
-
-  // Searchable PDF trick: Gambar teks asli DIBALIK gambar (sebelum gambar)
-  // Gunakan warna abu-abu (bukan putih murni) agar tidak diblokir filter anti-spam Chrome
-  // Saat gambar diletakkan di atasnya, teks ini akan tertutupi, tapi tetap bisa di-search
-  if (ocrText) {
-    doc.setTextColor(200, 200, 200); 
-    doc.setFontSize(8); 
-    const lines = doc.splitTextToSize(cleanText(ocrText), imgW);
-    doc.text(lines, imgX, y + 4);
-  }
 
   try {
     doc.addImage(imgData.dataUrl, imgData.format, imgX, y, imgW, imgH);
@@ -491,26 +481,59 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
     }
     y += 13;
 
-    // ── Question text ──
-    y += 2;
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...COLORS.BLACK);
-    y = drawWrappedText(doc, cleanText(q.title || `Soal ${no}`), M + 4, y, CW - 8, 4.5);
-    y += 3;
+    // ── Question title (jika ada dan bermakna) ──
+    const cleanTitle = cleanText(q.title);
+    if (cleanTitle && cleanTitle.toLowerCase() !== `soal ${no}`.toLowerCase()) {
+      y += 2;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...COLORS.BLACK);
+      y = drawWrappedText(doc, cleanTitle, M + 4, y, CW - 8, 4.5);
+      y += 3;
+    }
 
-    // ── Question image (with invisible OCR text layer) ──
+    // ── Question image (ATAS GAMBAR) ──
     const qImgKey = `q_${q.index}`;
     if (imageMap[qImgKey]) {
-      y = addImageToPdf(doc, imageMap[qImgKey], y, CW - 16, 85, q.imageOcrText);
-    } else if (q.imageOcrText) {
-      // Fallback: If image missing but OCR exists, render visibly
-      y = ensureSpace(doc, y, 8);
-      doc.setFontSize(9);
+      y = addImageToPdf(doc, imageMap[qImgKey], y, CW - 16, 75);
+      y += 2;
+    }
+
+    // ── Question OCR Text (BAWAH GAMBAR: teks hasil scan OCR) ──
+    if (q.imageOcrText && q.imageOcrText.trim()) {
+      y = ensureSpace(doc, y, 16);
+      const cleanOcr = cleanText(q.imageOcrText);
+      const ocrLines = doc.splitTextToSize(cleanOcr, CW - 16);
+      const lineH = 4.2;
+      const boxH = Math.max(ocrLines.length * lineH + 10, 14);
+
+      // Kotak latar belakang untuk teks OCR
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(...COLORS.LINE);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(M + 2, y, CW - 4, boxH, 1.5, 1.5, 'FD');
+
+      // Garis aksen di kiri
+      doc.setFillColor(...COLORS.NAVY);
+      doc.rect(M + 2, y, 2.5, boxH, 'F');
+
+      // Label teks OCR
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...COLORS.NAVY);
+      doc.text('TEKS SOAL (HASIL SCAN OCR)', M + 8, y + 5);
+
+      // Isi teks OCR
+      doc.setFontSize(8.5);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...COLORS.BLACK);
-      y = drawWrappedText(doc, cleanText(q.imageOcrText), M + 4, y, CW - 8, 4);
-      y += 4;
+      doc.setTextColor(30, 41, 59);
+      let ocrY = y + 9.5;
+      for (const line of ocrLines) {
+        doc.text(line, M + 8, ocrY);
+        ocrY += lineH;
+      }
+
+      y += boxH + 4;
     }
 
     // ── Choices ──
@@ -573,17 +596,18 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
 
         y += 4;
 
-        // Choice image (with invisible OCR text layer)
+        // Choice image & OCR text
         const cImgKey = `q_${q.index}_c_${ci}`;
         const cOcrText = (typeof c === 'object' && c?.ocrText) ? c.ocrText : null;
         if (imageMap[cImgKey]) {
-          y = addImageToPdf(doc, imageMap[cImgKey], y, 45, 35, cOcrText);
-        } else if (cOcrText) {
+          y = addImageToPdf(doc, imageMap[cImgKey], y, 45, 35);
+        }
+        if (cOcrText) {
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
-          doc.setTextColor(...COLORS.BLACK);
+          doc.setTextColor(...COLORS.GREY);
           y = drawWrappedText(doc, cleanText(cOcrText), M + 20, y, CW - 32, 3.5);
-          y += 4;
+          y += 2;
         }
 
         y += 2;

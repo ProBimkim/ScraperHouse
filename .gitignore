@@ -55,3 +55,6 @@ claude.md
 security-audit-skill/
 audit-output/
 
+# Tesseract traineddata
+*.traineddata
+

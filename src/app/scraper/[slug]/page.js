@@ -180,10 +180,14 @@ export default function ScraperResult({ params }) {
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
-    setPdfProgress('Memulai...');
+    setPdfProgress('Mengambil data terbaru...');
     try {
+      const res = await fetch(`/api/scraper/${slug}`);
+      const freshData = res.ok ? await res.json() : data;
+      if (freshData) setData(freshData);
+
       const { buildRapiPdf } = await import('@/lib/pdfRapi');
-      await buildRapiPdf(data, setPdfProgress);
+      await buildRapiPdf(freshData || data, setPdfProgress);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Gagal membuat file PDF: ' + (err.message || 'Terjadi kesalahan'));
