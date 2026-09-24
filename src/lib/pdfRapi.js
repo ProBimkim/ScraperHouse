@@ -242,7 +242,7 @@ async function preloadImages(questions, onProgress) {
 // 5. PAGE BUILDERS
 // ═══════════════════════════════════════════════════════════════
 
-function buildCoverPage(doc, title, subtitle, classified, topicCounts) {
+function buildCoverPage(doc, title, subtitle, classified) {
   const { M, CW, H } = PAGE;
   let y = 45;
 
@@ -271,7 +271,7 @@ function buildCoverPage(doc, title, subtitle, classified, topicCounts) {
 
   // Info box
   doc.setFillColor(...COLORS.LIGHT);
-  doc.roundedRect(M, y, CW, 48, 2, 2, 'F');
+  doc.roundedRect(M, y, CW, 28, 2, 2, 'F');
   y += 9;
 
   doc.setFontSize(10);
@@ -279,21 +279,6 @@ function buildCoverPage(doc, title, subtitle, classified, topicCounts) {
   doc.setTextColor(...COLORS.NAVY);
   doc.text(`${classified.length} Soal`, M + 10, y);
   y += 7;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...COLORS.BLACK);
-  const topicList = Object.entries(topicCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([t, c]) => `${t} (${c})`)
-    .join('  \u00B7  ');
-
-  const topicLines = doc.splitTextToSize(`Topik: ${topicList}`, CW - 20);
-  for (const line of topicLines) {
-    doc.text(line, M + 10, y);
-    y += 4.5;
-  }
-  y += 4;
 
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.GREY);
@@ -396,14 +381,13 @@ function buildQuestionList(doc, autoTable, classified) {
 
   const tableBody = classified.map(q => [
     String(q.index + 1),
-    q.topik,
     ringkasQuestion(q),
     getAnswerShort(q.aiAnswer, q.choices),
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [['No', 'Topik', 'Ringkasan Soal', 'Jawaban']],
+    head: [['No', 'Ringkasan Soal', 'Jawaban']],
     body: tableBody,
     theme: 'grid',
     styles: {
@@ -424,10 +408,9 @@ function buildQuestionList(doc, autoTable, classified) {
       fillColor: COLORS.LIGHT,
     },
     columnStyles: {
-      0: { cellWidth: PAGE.CW * 0.06, halign: 'center', fontStyle: 'bold' },
-      1: { cellWidth: PAGE.CW * 0.15 },
-      2: { cellWidth: PAGE.CW * 0.62 },
-      3: { cellWidth: PAGE.CW * 0.17, halign: 'center', fontStyle: 'bold' },
+      0: { cellWidth: PAGE.CW * 0.08, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: PAGE.CW * 0.74 },
+      2: { cellWidth: PAGE.CW * 0.18, halign: 'center', fontStyle: 'bold' },
     },
     margin: { left: PAGE.M, right: PAGE.M },
   });
@@ -492,8 +475,9 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(220, 230, 242);
-    const topicLabel = q.topik + (q.type ? `  \u00B7  ${q.type}` : '');
-    doc.text(topicLabel, M + CW - 6, y + 6.2, { align: 'right' });
+    if (q.type) {
+      doc.text(q.type, M + CW - 6, y + 6.2, { align: 'right' });
+    }
     y += 13;
 
     // ── Question text ──
@@ -510,9 +494,9 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
       y = addImageToPdf(doc, imageMap[qImgKey], y, CW - 16, 85);
     }
 
-    // ── OCR Text (collapsible alternative) ──
+    // ── OCR Text (full searchable) ──
     if (q.imageOcrText) {
-      y = ensureSpace(doc, y, 18);
+      y = ensureSpace(doc, y, 12);
 
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
@@ -520,30 +504,13 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
       doc.text('Teks OCR (bisa dicari):', M + 4, y);
       y += 4;
 
-      // OCR background box
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(...COLORS.LINE);
-      doc.setLineWidth(0.2);
-
       doc.setFontSize(7.5);
       doc.setFont('courier', 'normal');
       doc.setTextColor(...COLORS.BLACK);
-      const ocrLines = doc.splitTextToSize(q.imageOcrText, CW - 16);
-      const displayLines = ocrLines.slice(0, 8);
-      const boxH = displayLines.length * 3.5 + 6;
-
-      doc.roundedRect(M + 4, y - 1, CW - 8, boxH, 1, 1, 'FD');
-      y += 2;
-      for (const line of displayLines) {
-        doc.text(line, M + 8, y);
-        y += 3.5;
-      }
-      if (ocrLines.length > 8) {
-        doc.setTextColor(...COLORS.GREY);
-        doc.text(`... (${ocrLines.length - 8} baris lagi)`, M + 8, y);
-        y += 3.5;
-      }
-      y += 3;
+      
+      // Draw full text, allow pagination
+      y = drawWrappedText(doc, q.imageOcrText, M + 4, y, CW - 8, 3.5);
+      y += 4;
     }
 
     // ── Choices ──
@@ -855,20 +822,14 @@ export async function buildRapiPdf(data, onProgress) {
     throw new Error('Tidak ada soal untuk dibuat PDF.');
   }
 
-  // ── Step 1: Klasifikasi topik (otomatis, tanpa AI) ──
-  if (onProgress) onProgress('Mengklasifikasi topik soal...');
+  // ── Step 1: Mapping Data ──
+  if (onProgress) onProgress('Memproses data soal...');
   const classified = questions.map((q, i) => ({
     ...q,
     index: i,
-    topik: klasifikasiTopik(q.title, q.choices || []),
     aiAnswer: aiAnswers.find(a => a.questionId === q.id) || null,
     comment: comments.find(c => c.questionId === q.id)?.text || null,
   }));
-
-  const topicCounts = {};
-  classified.forEach(q => {
-    topicCounts[q.topik] = (topicCounts[q.topik] || 0) + 1;
-  });
 
   // ── Step 2: Preload gambar ──
   const imageMap = await preloadImages(questions, onProgress);
@@ -885,11 +846,7 @@ export async function buildRapiPdf(data, onProgress) {
 
   // ── Step 4: Cover page ──
   if (onProgress) onProgress('Membuat halaman sampul...');
-  buildCoverPage(doc, title, 'Kumpulan soal & kunci jawaban', classified, topicCounts);
-
-  // ── Step 5: Indeks topik ──
-  if (onProgress) onProgress('Membuat indeks topik...');
-  buildTopicIndex(doc, autoTable, classified, topicCounts);
+  buildCoverPage(doc, title, 'Kumpulan soal & kunci jawaban', classified);
 
   // ── Step 6: Daftar soal ──
   if (onProgress) onProgress('Membuat daftar soal...');
