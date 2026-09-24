@@ -49,26 +49,52 @@ export default function ScraperResult({ params }) {
   const [isProcessingOcr, setIsProcessingOcr] = useState(false);
 
   const handleTriggerOcr = async () => {
+    // 1. Cek apakah ada gambar soal yang belum di-OCR
+    const unscanned = (data?.questions || []).filter(
+      q => (q.imageUrl && !q.imageOcrText) || 
+           q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)
+    );
+
+    // Jika seluruh gambar sudah ter-OCR, langsung beri konfirmasi instan (0 detik)
+    if (unscanned.length === 0) {
+      const ocrCount = data?.questions?.filter(q => q.imageOcrText)?.length || 0;
+      setActionToast(`✓ Seluruh ${ocrCount} gambar soal sudah selesai di-OCR dan siap dicari!`);
+      setTimeout(() => setActionToast(null), 4000);
+      return;
+    }
+
+    // 2. Jika ada yang belum di-OCR, proses bertahap per batch (5 gambar per request) agar cepat & tidak timeout
     setIsProcessingOcr(true);
-    setActionToast('Memulai scan OCR gambar untuk web...');
+    const totalNeeded = unscanned.length;
+    let completed = 0;
+
     try {
-      const res = await fetch(`/api/scraper/${slug}/ocr?force=true`, { method: 'POST' });
-      const resData = await res.json();
-      if (res.ok) {
-        const refreshed = await fetch(`/api/scraper/${slug}`);
-        if (refreshed.ok) {
-          const fresh = await refreshed.json();
-          setData(fresh);
-          const ocrCount = fresh?.questions?.filter(q => q.imageOcrText)?.length || 0;
-          setActionToast(`✓ OCR Web selesai! ${ocrCount} soal siap dicari.`);
-          setTimeout(() => setActionToast(null), 4000);
+      while (true) {
+        setActionToast(`⚡ Memindai OCR: ${completed}/${totalNeeded} gambar selesai...`);
+        const res = await fetch(`/api/scraper/${slug}/ocr?limit=5`, { method: 'POST' });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Gagal memproses batch OCR');
         }
-      } else {
-        setActionToast('Gagal scan OCR: ' + (resData.error || 'Terjadi kesalahan'));
+        const resData = await res.json();
+        completed += resData.processed || 0;
+
+        if (resData.remaining <= 0 || resData.processed === 0) {
+          break;
+        }
+      }
+
+      // Ambil data terbaru yang sudah lengkap
+      const refreshed = await fetch(`/api/scraper/${slug}`);
+      if (refreshed.ok) {
+        const fresh = await refreshed.json();
+        setData(fresh);
+        const ocrCount = fresh?.questions?.filter(q => q.imageOcrText)?.length || 0;
+        setActionToast(`✓ Selesai! ${ocrCount} soal berhasil dipindai dan siap dicari.`);
         setTimeout(() => setActionToast(null), 4000);
       }
     } catch (e) {
-      setActionToast('Error: ' + e.message);
+      setActionToast('Error OCR: ' + e.message);
       setTimeout(() => setActionToast(null), 4000);
     } finally {
       setIsProcessingOcr(false);
