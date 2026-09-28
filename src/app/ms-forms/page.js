@@ -57,18 +57,25 @@ export default function Home() {
       try {
         data = JSON.parse(text);
       } catch (err) {
-        throw new Error(`Server Error (${res.status}): ${text.substring(0, 50)}...`);
+        throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}...`);
       }
 
-      if (data.error) {
-        setToast(data.error);
-        setTimeout(() => setToast(null), 4000);
+      if (!res.ok || data.error) {
+        const errMsg = data.error || `Server returned ${res.status}`;
+        setToast(`❌ ${errMsg}`);
+        setTimeout(() => setToast(null), 6000);
+        // Refresh history to show the failed status
+        fetchHistory();
+        fetchErrorCount();
       } else if (data.slug) {
         router.push(`/scraper/${data.slug}`);
       }
     } catch (err) {
-      setToast(err.message);
-      setTimeout(() => setToast(null), 4000);
+      setToast(`❌ ${err.message}`);
+      setTimeout(() => setToast(null), 6000);
+      // Refresh history to show the failed status
+      fetchHistory();
+      fetchErrorCount();
     } finally {
       setLoading(false);
     }

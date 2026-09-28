@@ -535,6 +535,17 @@ async function scrapeWithFetch(url) {
 /**
  * Main entry point: tries Puppeteer first, then falls back to pure fetch.
  */
+function withStepTimeout(promise, ms, stepName) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${stepName} timed out after ${ms / 1000}s`));
+    }, ms);
+    promise
+      .then((val) => { clearTimeout(timer); resolve(val); })
+      .catch((err) => { clearTimeout(timer); reject(err); });
+  });
+}
+
 export async function runScraper(url, slug) {
   await connectToDatabase();
 
@@ -615,9 +626,10 @@ export async function runScraper(url, slug) {
     // --- OCR Processing Logic Start ---
     try {
       result.steps.push({ step: 'ocr_processing', status: 'starting' });
-      const ocrStats = await runOcrOnQuestions(result.questions);
+      const ocrStats = await withStepTimeout(runOcrOnQuestions(result.questions), 15000, 'OCR processing');
       result.steps.push({ step: 'ocr_processing', status: 'ok', processed: ocrStats.processed, total: ocrStats.total });
     } catch (ocrErr) {
+      console.error('OCR step failed:', ocrErr.message);
       result.steps.push({ step: 'ocr_processing', status: 'failed', message: ocrErr.message });
     }
     // --- OCR Processing Logic End ---
@@ -625,10 +637,11 @@ export async function runScraper(url, slug) {
     // --- AI Answering Logic Start ---
     try {
       result.steps.push({ step: 'ai_answering', status: 'starting' });
-      const aiAnswers = await getAIAnswers(result.questions);
+      const aiAnswers = await withStepTimeout(getAIAnswers(result.questions), 20000, 'AI answering');
       resultDoc.aiAnswers = aiAnswers;
       result.steps.push({ step: 'ai_answering', status: 'ok', count: aiAnswers.length });
     } catch (aiErr) {
+      console.error('AI answering step failed:', aiErr.message);
       result.steps.push({ step: 'ai_answering', status: 'failed', message: aiErr.message });
     }
     // --- AI Answering Logic End ---
@@ -665,6 +678,18 @@ export async function runScraper(url, slug) {
     });
   }
 
-  await resultDoc.save();
+  try {
+    await resultDoc.save();
+  } catch (saveErr) {
+    console.error('Failed to save scrape result:', saveErr.message);
+    // Last-ditch: try to at least mark as failed
+    try {
+      await ScrapeResult.updateOne(
+        { slug },
+        { $set: { status: 'failed' }, $push: { errors: { message: `Save failed: ${saveErr.message}` } } }
+      );
+    } catch {}
+    throw saveErr;
+  }
   return resultDoc;
 }
