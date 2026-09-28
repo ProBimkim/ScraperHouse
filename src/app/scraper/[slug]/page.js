@@ -534,32 +534,7 @@ export default function ScraperResult({ params }) {
                       })}
                     </ul>
                   )}
-                {data?.aiAnswers?.find(a => a.questionId === q.id) && (() => {
-                  const aiAnswer = data.aiAnswers.find(a => a.questionId === q.id);
-                  return (
-                    <div className="ai-answer-card">
-                      <div className="ai-answer-header">
-                        <span style={{ fontSize: '1.2rem' }}>🤖</span>
-                        <strong>Jawaban AI</strong>
-                      </div>
-                      <div className="ai-answer-body">
-                        {aiAnswer.answer && (
-                          <div style={{ marginBottom: '12px', fontSize: '1.05rem', fontWeight: 500, color: 'var(--text-main)' }}>
-                            {aiAnswer.answer}
-                          </div>
-                        )}
-                        {aiAnswer.thinking && (
-                          <details className="ai-thinking">
-                            <summary>Lihat cara berpikir AI</summary>
-                            <div className="ai-thinking-content">
-                              {aiAnswer.thinking}
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+
                 
                 <CommentBox
                   slug={slug}
