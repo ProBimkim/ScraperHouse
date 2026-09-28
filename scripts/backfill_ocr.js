@@ -1,7 +1,17 @@
 const mongoose = require('mongoose');
 const { createWorker, createScheduler } = require('tesseract.js');
 
-const uri = 'mongodb+srv://bimkiminfor_db_user:gQg4yefWGAPiyetx@cluster0.8fealwi.mongodb.net/scraper_db?appName=Cluster0';
+const uri = process.env.MONGODB_URI || 'mongodb+srv://bimkiminfor_db_user:gQg4yefWGAPiyetx@cluster0.8fealwi.mongodb.net/scraper_db?appName=Cluster0';
+
+function getOcrOptimizedUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('res.cloudinary.com') && url.includes('/upload/')) {
+    if (!url.includes('/w_')) {
+      return url.replace('/upload/', '/upload/w_900,c_scale/');
+    }
+  }
+  return url;
+}
 
 async function main() {
   const targetSlug = process.argv[2] || 'scraper_muc3928l';
@@ -19,12 +29,12 @@ async function main() {
 
   const tasks = [];
   doc.questions.forEach((q, qIdx) => {
-    if (q.imageUrl && !q.imageOcrText) {
+    if (q.imageUrl && typeof q.imageOcrText !== 'string') {
       tasks.push({ qIdx, type: 'question', url: q.imageUrl });
     }
     if (q.choices) {
       q.choices.forEach((c, cIdx) => {
-        if (typeof c === 'object' && c && c.imageUrl && !c.ocrText) {
+        if (typeof c === 'object' && c && c.imageUrl && typeof c.ocrText !== 'string') {
           tasks.push({ qIdx, cIdx, type: 'choice', url: c.imageUrl });
         }
       });
@@ -37,12 +47,12 @@ async function main() {
     process.exit(0);
   }
 
-  // Create scheduler with 3 workers
-  console.log('Initializing Tesseract scheduler with 3 workers...');
+  // Create scheduler with 3 workers (ind language for speed)
+  console.log('Initializing Tesseract scheduler with 3 workers (ind)...');
   const scheduler = createScheduler();
-  const w1 = await createWorker('ind+eng');
-  const w2 = await createWorker('ind+eng');
-  const w3 = await createWorker('ind+eng');
+  const w1 = await createWorker('ind');
+  const w2 = await createWorker('ind');
+  const w3 = await createWorker('ind');
   scheduler.addWorker(w1);
   scheduler.addWorker(w2);
   scheduler.addWorker(w3);
@@ -54,7 +64,8 @@ async function main() {
   await Promise.all(
     tasks.map(async (task) => {
       try {
-        const ret = await scheduler.addJob('recognize', task.url);
+        const optimizedUrl = getOcrOptimizedUrl(task.url);
+        const ret = await scheduler.addJob('recognize', optimizedUrl);
         const text = ret?.data?.text?.trim() || '';
         if (task.type === 'question') {
           doc.questions[task.qIdx].imageOcrText = text;
@@ -68,6 +79,11 @@ async function main() {
         }
       } catch (err) {
         console.warn(`Failed OCR for task at qIdx ${task.qIdx}:`, err.message);
+        if (task.type === 'question' && typeof doc.questions[task.qIdx].imageOcrText !== 'string') {
+          doc.questions[task.qIdx].imageOcrText = '';
+        } else if (task.type === 'choice' && typeof doc.questions[task.qIdx].choices[task.cIdx].ocrText !== 'string') {
+          doc.questions[task.qIdx].choices[task.cIdx].ocrText = '';
+        }
       }
     })
   );

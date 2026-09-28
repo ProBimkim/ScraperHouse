@@ -51,13 +51,13 @@ export default function ScraperResult({ params }) {
   const handleTriggerOcr = async () => {
     // 1. Cek apakah ada gambar soal yang belum di-OCR
     const unscanned = (data?.questions || []).filter(
-      q => (q.imageUrl && !q.imageOcrText) || 
-           q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && !c.ocrText)
+      q => (q.imageUrl && typeof q.imageOcrText !== 'string') || 
+           q.choices?.some(c => typeof c === 'object' && c !== null && c.imageUrl && typeof c.ocrText !== 'string')
     );
 
     // Jika seluruh gambar sudah ter-OCR, langsung beri konfirmasi instan (0 detik)
     if (unscanned.length === 0) {
-      const ocrCount = data?.questions?.filter(q => q.imageOcrText)?.length || 0;
+      const ocrCount = data?.questions?.filter(q => q.imageOcrText && q.imageOcrText.trim())?.length || 0;
       setActionToast(`✓ Seluruh ${ocrCount} gambar soal sudah selesai di-OCR dan siap dicari!`);
       setTimeout(() => setActionToast(null), 4000);
       return;

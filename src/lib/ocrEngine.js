@@ -48,12 +48,12 @@ export async function runOcrOnQuestions(questions, onProgress, force = false, li
   // Kumpulkan task yang belum memiliki OCR (atau semua jika force = true)
   const tasks = [];
   for (const q of questions) {
-    if (q.imageUrl && (force || !q.imageOcrText)) {
+    if (q.imageUrl && (force || typeof q.imageOcrText !== 'string')) {
       tasks.push({ target: q, field: 'imageOcrText', url: q.imageUrl });
     }
     if (q.choices && q.choices.length > 0) {
       for (const c of q.choices) {
-        if (typeof c === 'object' && c !== null && c.imageUrl && (force || !c.ocrText)) {
+        if (typeof c === 'object' && c !== null && c.imageUrl && (force || typeof c.ocrText !== 'string')) {
           tasks.push({ target: c, field: 'ocrText', url: c.imageUrl });
         }
       }
@@ -75,15 +75,23 @@ export async function runOcrOnQuestions(questions, onProgress, force = false, li
     for (const task of tasksToProcess) {
       try {
         const optimizedUrl = getOcrOptimizedUrl(task.url);
-        const ret = await worker.recognize(optimizedUrl);
-        const text = ret?.data?.text?.trim();
-        if (text) {
-          task.target[task.field] = text;
-          processed++;
-          if (onProgress) onProgress(processed, tasksToProcess.length);
-        }
+        // Timeout guard per image
+        const recognizePromise = worker.recognize(optimizedUrl);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('OCR recognition timeout')), OCR_TIMEOUT_MS)
+        );
+        const ret = await Promise.race([recognizePromise, timeoutPromise]);
+        const text = ret?.data?.text?.trim() || '';
+        task.target[task.field] = text;
+        processed++;
+        if (onProgress) onProgress(processed, tasksToProcess.length);
       } catch (err) {
         console.warn(`OCR error for ${task.url}:`, err.message);
+        // Jika error atau timeout, tandai string kosong agar tidak macet di perulangan batch berikutnya
+        if (typeof task.target[task.field] !== 'string') {
+          task.target[task.field] = '';
+          processed++;
+        }
       }
     }
   } catch (err) {
@@ -94,5 +102,5 @@ export async function runOcrOnQuestions(questions, onProgress, force = false, li
     }
   }
 
-  return { processed, total, remaining: total - processed };
+  return { processed, total, remaining: Math.max(0, total - tasksToProcess.length) };
 }

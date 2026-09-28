@@ -54,11 +54,12 @@ function cleanText(s) {
  * Klasifikasi topik soal berdasarkan teks (full otomatis, tanpa AI).
  * Adaptasi & perluasan dari klasifikasi() di pdf_rapi.py
  */
-function klasifikasiTopik(title, choices) {
-  const choiceTexts = (choices || []).map(c =>
-    typeof c === 'string' ? c : (c?.text || '')
-  );
-  const text = ((title || '') + ' ' + choiceTexts.join(' ')).toLowerCase();
+function klasifikasiTopik(title, choices, ocrText = '') {
+  const choiceTexts = (choices || []).map(c => {
+    if (typeof c === 'string') return c;
+    return (c?.text || '') + ' ' + (c?.ocrText || '');
+  });
+  const text = ((title || '') + ' ' + (ocrText || '') + ' ' + choiceTexts.join(' ')).toLowerCase();
 
   // Matematika geometri dimensi tiga (dari pdf_rapi.py)
   if (/bidang pemotong|irisan|penampang/.test(text)) return 'Irisan Bidang';
@@ -103,7 +104,10 @@ function klasifikasiTopik(title, choices) {
  * Adaptasi dari ringkas() di pdf_rapi.py
  */
 function ringkasQuestion(q) {
-  const text = cleanText(q.title) || cleanText(q.imageOcrText) || `Soal ${q.index + 1}`;
+  const cleanTitle = cleanText(q.title);
+  const isGeneric = !cleanTitle || /^(soal|pernyataan|pertanyaan)\s*\d+$/i.test(cleanTitle);
+  const cleanOcr = cleanText(q.imageOcrText);
+  const text = (isGeneric && cleanOcr) ? cleanOcr : (cleanTitle || cleanOcr || `Soal ${q.index + 1}`);
   if (text.length <= 100) return text;
   return text.substring(0, 97).trimEnd() + '...';
 }
@@ -483,7 +487,8 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
 
     // ── Question title (jika ada dan bermakna) ──
     const cleanTitle = cleanText(q.title);
-    if (cleanTitle && cleanTitle.toLowerCase() !== `soal ${no}`.toLowerCase()) {
+    const isGenericTitle = !cleanTitle || /^(soal|pernyataan|pertanyaan)\s*\d+$/i.test(cleanTitle);
+    if (!isGenericTitle) {
       y += 2;
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
@@ -500,12 +505,27 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
     }
 
     // ── Question OCR Text (BAWAH GAMBAR: teks hasil scan OCR) ──
-    if (q.imageOcrText && q.imageOcrText.trim()) {
-      y = ensureSpace(doc, y, 16);
-      const cleanOcr = cleanText(q.imageOcrText);
+    const rawOcr = q.imageOcrText ? q.imageOcrText.trim() : '';
+    if (rawOcr) {
+      const cleanOcr = rawOcr
+        .replace(/^[\s]*(?:[☐□☑✓✗])\s*/, '')
+        .replace(/(\w)-\s+([a-z])/g, '$1$2')
+        .replace(/\s+/g, ' ')
+        .trim();
+
       const ocrLines = doc.splitTextToSize(cleanOcr, CW - 16);
       const lineH = 4.2;
       const boxH = Math.max(ocrLines.length * lineH + 10, 14);
+
+      // Cek ruang halaman
+      if (y + boxH > PAGE.H - PAGE.BM) {
+        if (boxH <= PAGE.H - PAGE.BM - PAGE.M) {
+          doc.addPage();
+          y = PAGE.M;
+        } else {
+          y = ensureSpace(doc, y, 20);
+        }
+      }
 
       // Kotak latar belakang untuk teks OCR
       doc.setFillColor(248, 250, 252);
@@ -529,6 +549,10 @@ function buildQuestionCards(doc, classified, imageMap, onProgress) {
       doc.setTextColor(30, 41, 59);
       let ocrY = y + 9.5;
       for (const line of ocrLines) {
+        if (ocrY > PAGE.H - PAGE.BM) {
+          doc.addPage();
+          ocrY = PAGE.M + 5;
+        }
         doc.text(line, M + 8, ocrY);
         ocrY += lineH;
       }
@@ -849,9 +873,15 @@ export async function buildRapiPdf(data, onProgress) {
   const classified = questions.map((q, i) => ({
     ...q,
     index: i,
+    topik: klasifikasiTopik(q.title, q.choices, q.imageOcrText),
     aiAnswer: aiAnswers.find(a => a.questionId === q.id) || null,
     comment: comments.find(c => c.questionId === q.id)?.text || null,
   }));
+
+  const topicCounts = {};
+  classified.forEach(q => {
+    topicCounts[q.topik] = (topicCounts[q.topik] || 0) + 1;
+  });
 
   // ── Step 2: Preload gambar ──
   const imageMap = await preloadImages(questions, onProgress);
@@ -869,6 +899,10 @@ export async function buildRapiPdf(data, onProgress) {
   // ── Step 4: Cover page ──
   if (onProgress) onProgress('Membuat halaman sampul...');
   buildCoverPage(doc, title, 'Kumpulan soal & kunci jawaban', classified);
+
+  // ── Step 5: Indeks per topik ──
+  if (onProgress) onProgress('Membuat indeks per topik...');
+  buildTopicIndex(doc, autoTable, classified, topicCounts);
 
   // ── Step 6: Daftar soal ──
   if (onProgress) onProgress('Membuat daftar soal...');
