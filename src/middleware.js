@@ -4,16 +4,19 @@ export function middleware(request) {
   const authToken = request.cookies.get('auth_token')?.value
   const { pathname } = request.nextUrl
 
-  // Allow access to login page
-  if (pathname === '/login') {
-    if (authToken === 'true') {
+  // Allow access to login page and authentication API
+  if (pathname === '/login' || pathname === '/api/auth/login') {
+    if (pathname === '/login' && authToken === 'true') {
       return NextResponse.redirect(new URL('/', request.url))
     }
     return NextResponse.next()
   }
 
-  // Check auth for other pages
+  // Reject unauthenticated requests
   if (!authToken || authToken !== 'true') {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
@@ -23,13 +26,12 @@ export function middleware(request) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
+     * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - static images (svg, png, jpg, jpeg, gif, webp)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

@@ -1,17 +1,56 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 
+// shortcut: in-memory IP rate limiter resets on server restart; upgrade to Redis/Upstash for multi-region serverless
+const loginAttempts = new Map()
+const MAX_ATTEMPTS = 5
+const WINDOW_MS = 15 * 60 * 1000
+
 export async function POST(request) {
   try {
+    // CSRF & Origin Validation
+    const origin = request.headers.get('origin')
+    const host = request.headers.get('host')
+    const secFetchSite = request.headers.get('sec-fetch-site')
+    if (secFetchSite === 'cross-site') {
+      return NextResponse.json({ error: 'Akses ditolak (Cross-origin forbidden)' }, { status: 403 })
+    }
+    if (origin) {
+      try {
+        if (new URL(origin).host !== host) {
+          return NextResponse.json({ error: 'Akses ditolak (Cross-origin forbidden)' }, { status: 403 })
+        }
+      } catch {
+        return NextResponse.json({ error: 'Akses ditolak' }, { status: 403 })
+      }
+    }
+
+    // IP Extraction & Rate Limiting
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
+               request.headers.get('x-real-ip') || 
+               '127.0.0.1'
+
+    const now = Date.now()
+    const attempt = loginAttempts.get(ip)
+    if (attempt && now < attempt.resetAt && attempt.count >= MAX_ATTEMPTS) {
+      const waitMinutes = Math.ceil((attempt.resetAt - now) / 60000)
+      return NextResponse.json(
+        { error: `Terlalu banyak percobaan login. Silakan tunggu ${waitMinutes} menit lagi.` },
+        { status: 429, headers: { 'Retry-After': '900' } }
+      )
+    }
+
     const { keyword } = await request.json()
     // Fallback to DEV_BIMKIM if environment variable is undefined (e.g. dev server not restarted)
     const correctPassword = process.env.APP_PASSWORD || 'DEV_BIMKIM'
 
     if (keyword === correctPassword) {
+      loginAttempts.delete(ip)
       const cookieStore = await cookies()
       cookieStore.set('auth_token', 'true', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 7, // 1 week
         path: '/',
       })
@@ -19,8 +58,17 @@ export async function POST(request) {
       return NextResponse.json({ success: true })
     }
 
+    // Track failed attempt
+    if (!attempt || now >= attempt.resetAt) {
+      loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS })
+    } else {
+      attempt.count += 1
+    }
+
+    const currentCount = loginAttempts.get(ip)?.count || 1
+    const remaining = Math.max(0, MAX_ATTEMPTS - currentCount)
     return NextResponse.json(
-      { error: 'Kata kunci salah' },
+      { error: `Kata kunci salah${remaining > 0 ? ` (Sisa ${remaining} percobaan)` : ' (Akun terkunci sementara)'}` },
       { status: 401 }
     )
   } catch (error) {
