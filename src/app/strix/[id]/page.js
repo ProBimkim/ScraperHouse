@@ -222,17 +222,46 @@ export default function StrixDetailPage({ params }) {
                   )}
 
                   {/* Discovered Login Endpoints */}
+                  {/* Discovered Login Endpoints (Burp-style parameter inspection & fuzzing) */}
                   {scanResult.recon.loginEndpoints?.length > 0 && (
-                    <div className={styles.reconCard}>
+                    <div className={styles.reconCard} style={{ gridColumn: '1 / -1' }}>
                       <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60a5fa' }}>
                         <Shield size={16} />
-                        Discovered Authentication / Login Endpoints ({scanResult.recon.loginEndpoints.length})
+                        Authentication & Login Security Diagnostics ({scanResult.recon.loginEndpoints.length})
                       </div>
-                      <div className={styles.reconTagList}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {scanResult.recon.loginEndpoints.map((log, i) => (
-                          <span key={i} className={styles.reconTagInfo}>
-                            [{log.method || 'POST'}] {log.path} {log.status ? `(HTTP ${log.status})` : ''}
-                          </span>
+                          <div key={i} style={{ background: 'rgba(2, 6, 23, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                              <span style={{ fontWeight: 600, color: '#f1f5f9', fontFamily: 'monospace' }}>
+                                [{log.method || 'POST'}] {log.path} {log.status ? `(HTTP ${log.status})` : ''}
+                              </span>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {log.fuzzResult === 'BYPASS_DETECTED' && (
+                                  <span className={styles.reconTagDanger}>SQLi BYPASS CONFIRMED</span>
+                                )}
+                                {log.fuzzResult === 'SQL_ERROR_LEAK' && (
+                                  <span className={styles.reconTagWarning}>SQL ERROR LEAK</span>
+                                )}
+                                <span className={log.hasCsrf ? styles.reconTagSuccess : styles.reconTagWarning}>
+                                  {log.hasCsrf ? 'CSRF: Protected' : 'CSRF: Missing'}
+                                </span>
+                                <span className={log.rateLimitDetected ? styles.reconTagSuccess : styles.reconTagWarning}>
+                                  {log.rateLimitDetected ? 'Rate-Limit: Enforced' : 'Intruder: No Rate-Limit'}
+                                </span>
+                              </div>
+                            </div>
+                            {log.fields?.length > 0 && (
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                Intercepted Parameters: <code style={{ color: '#fbbf24' }}>{log.fields.join(', ')}</code>
+                              </div>
+                            )}
+                            {log.note && (
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                {log.note}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
