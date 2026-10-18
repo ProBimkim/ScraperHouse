@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { FormInput, UserSearch, AlertTriangle, ArrowRight, GitGraph } from 'lucide-react';
+import { FormInput, UserSearch, AlertTriangle, ArrowRight, GitGraph, ShieldAlert } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import styles from './page.module.css';
 import { useEffect, useState } from 'react';
@@ -38,10 +38,24 @@ export default function Dashboard() {
           </h1>
         </div>
         <p className="page-subtitle" style={{ textAlign: 'center', marginBottom: '48px' }}>
-          Welcome to the central dashboard for data extraction tools and monitoring.
+          Welcome to the central dashboard for data extraction tools, AI intelligence, and security audits.
         </p>
 
         <div className={styles.dashboardGrid}>
+          {/* Strix AI Pentester */}
+          <Link href="/strix" className={styles.dashboardCard} style={{ borderColor: 'rgba(239, 68, 68, 0.25)' }}>
+            <div className={styles.cardIconWrapper} style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+              <ShieldAlert size={32} />
+            </div>
+            <h2 className={styles.cardTitle}>Strix AI Pentester</h2>
+            <p className={styles.cardDesc}>
+              Autonomous AI penetration testing & vulnerability assessment for web apps, APIs, and GitHub repos with OWASP Top 10 PoCs.
+            </p>
+            <div className={styles.cardAction} style={{ color: '#f87171' }}>
+              Start Pentest <ArrowRight size={16} />
+            </div>
+          </Link>
+
           {/* MS Forms Scraper */}
           <Link href="/ms-forms" className={styles.dashboardCard}>
             <div className={styles.cardIconWrapper} style={{ background: 'rgba(124, 108, 240, 0.15)', color: 'var(--primary)' }}>

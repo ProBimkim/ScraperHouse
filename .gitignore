@@ -58,3 +58,6 @@ audit-output/
 # Tesseract traineddata
 *.traineddata
 
+# External cloned repositories
+/repos/
+
