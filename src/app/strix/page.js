@@ -26,8 +26,11 @@ import {
   X,
   Key,
   Lock,
-  Shield
+  Shield,
+  Trash2
 } from 'lucide-react';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+
 
 export default function StrixPentestPage() {
   // Tabs & Target input
@@ -60,6 +63,16 @@ export default function StrixPentestPage() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Deletion state
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isDeletingAudit, setIsDeletingAudit] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Auto-scroll terminal logs
   const logsEndRef = useRef(null);
@@ -231,6 +244,37 @@ export default function StrixPentestPage() {
       setErrorMsg(`Could not load report: ${err.message}`);
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  // Delete handlers
+  const promptDeleteAudit = (item) => {
+    setItemToDelete(item);
+  };
+
+  const handleDeleteConfirm = async (password) => {
+    if (!itemToDelete) return;
+    setIsDeletingAudit(true);
+    try {
+      const slugOrId = itemToDelete.slug || itemToDelete._id;
+      const res = await fetch(`/api/strix/${slugOrId}?password=${encodeURIComponent(password)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setHistoryList((prev) => prev.filter((h) => h.slug !== itemToDelete.slug && h._id !== itemToDelete._id));
+        if (scanResult && (scanResult.slug === itemToDelete.slug || scanResult._id === itemToDelete._id)) {
+          setScanResult(null);
+        }
+        showToast('Audit report deleted successfully.', 'success');
+        setItemToDelete(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Failed to delete audit. Please check your password.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message || 'Error deleting audit.', 'error');
+    } finally {
+      setIsDeletingAudit(false);
     }
   };
 
@@ -770,6 +814,14 @@ export default function StrixPentestPage() {
                 <button type="button" className={styles.exportBtn} onClick={() => window.print()}>
                   <Printer size={14} /> Print / PDF
                 </button>
+                <button
+                  type="button"
+                  className={styles.deleteToolbarBtn}
+                  onClick={() => promptDeleteAudit(scanResult)}
+                  title="Hapus hasil audit ini"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
               </div>
             </div>
 
@@ -948,8 +1000,8 @@ export default function StrixPentestPage() {
                       className={styles.historyItem}
                       onClick={() => loadScanFromHistory(item.slug)}
                     >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '4px' }}>
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {item.target}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -957,19 +1009,33 @@ export default function StrixPentestPage() {
                         </div>
                       </div>
 
-                      <span
-                        className={
-                          item.summary?.riskRating === 'CRITICAL'
-                            ? styles.badgeCrit
-                            : item.summary?.riskRating === 'HIGH'
-                            ? styles.badgeHigh
-                            : item.summary?.riskRating === 'MEDIUM'
-                            ? styles.badgeMed
-                            : styles.badgeLow
-                        }
-                      >
-                        {item.summary?.riskRating || 'AUDITED'}
-                      </span>
+                      <div className={styles.historyItemRight}>
+                        <span
+                          className={
+                            item.summary?.riskRating === 'CRITICAL'
+                              ? styles.badgeCrit
+                              : item.summary?.riskRating === 'HIGH'
+                              ? styles.badgeHigh
+                              : item.summary?.riskRating === 'MEDIUM'
+                              ? styles.badgeMed
+                              : styles.badgeLow
+                          }
+                        >
+                          {item.summary?.riskRating || 'AUDITED'}
+                        </span>
+
+                        <button
+                          type="button"
+                          className={styles.deleteAuditBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            promptDeleteAudit(item);
+                          }}
+                          title="Hapus audit ini"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -977,7 +1043,32 @@ export default function StrixPentestPage() {
             </div>
           </div>
         )}
+
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmModal
+          isOpen={!!itemToDelete}
+          onClose={() => setItemToDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          isDeleting={isDeletingAudit}
+          item={itemToDelete}
+        />
+
+        {/* Toast Notification */}
+        {toast && (
+          <div
+            className={`${styles.strixToast} ${
+              toast.type === 'success'
+                ? styles.strixToastSuccess
+                : toast.type === 'error'
+                ? styles.strixToastError
+                : styles.strixToastInfo
+            }`}
+          >
+            {toast.msg}
+          </div>
+        )}
       </div>
     </>
   );
 }
+

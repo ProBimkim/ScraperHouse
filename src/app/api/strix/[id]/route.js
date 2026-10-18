@@ -32,7 +32,7 @@ export async function DELETE(req, { params }) {
     const url = new URL(req.url);
     const password = url.searchParams.get('password');
 
-    if (password && process.env.APP_PASSWORD && password !== process.env.APP_PASSWORD) {
+    if (process.env.APP_PASSWORD && password !== process.env.APP_PASSWORD) {
       return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
     }
 

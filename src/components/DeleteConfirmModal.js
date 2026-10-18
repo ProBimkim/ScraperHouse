@@ -24,6 +24,7 @@ export default function DeleteConfirmModal({
   if (!isOpen || !item) return null;
 
   const isSherlock = !!item.username;
+  const isStrix = !isSherlock && (!!item.target || !!item.scanMode || item.targetType !== undefined);
   const questionsCount = item.jumlah_pertanyaan ?? (item.questions ? item.questions.length : null);
   const formattedDate = item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID', {
     dateStyle: 'medium',
@@ -65,6 +66,26 @@ export default function DeleteConfirmModal({
                 </span>
               </div>
             </>
+          ) : isStrix ? (
+            <>
+              <div className="confirm-info-row">
+                <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ExternalLink size={14} /> Target
+                </span>
+                <span className="confirm-info-value" style={{ color: '#60a5fa', fontWeight: 600, wordBreak: 'break-all' }}>
+                  {item.target || item.targetLabel || item.slug}
+                </span>
+              </div>
+
+              <div className="confirm-info-row">
+                <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle size={14} /> Hasil Temuan
+                </span>
+                <span className="confirm-info-value">
+                  {item.summary?.totalVulnerabilities || 0} findings ({item.summary?.riskRating || item.scanMode?.toUpperCase() || 'AUDITED'})
+                </span>
+              </div>
+            </>
           ) : (
             <div className="confirm-info-row">
               <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -87,7 +108,7 @@ export default function DeleteConfirmModal({
             </div>
           )}
 
-          {!isSherlock && questionsCount !== null && (
+          {!isSherlock && !isStrix && questionsCount !== null && (
             <div className="confirm-info-row">
               <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <HelpCircle size={14} /> Total Soal
@@ -109,7 +130,7 @@ export default function DeleteConfirmModal({
             </div>
           )}
 
-          {item.url && (
+          {!isStrix && item.url && (
             <div className="confirm-info-row" style={{ alignItems: 'flex-start' }}>
               <span className="confirm-info-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <ExternalLink size={14} /> URL
@@ -137,6 +158,8 @@ export default function DeleteConfirmModal({
           <p style={{ marginBottom: '8px' }}>
             {isSherlock
               ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
+              : isStrix
+              ? '⚠️ Seluruh data hasil audit keamanan, analisis kerentanan, dan eksploit PoC target ini akan dihapus permanen dari sistem.'
               : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
           </p>
           <p>Masukkan password aplikasi untuk melanjutkan:</p>

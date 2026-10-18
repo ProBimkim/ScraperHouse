@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import styles from '../page.module.css';
 import { 
@@ -20,12 +21,16 @@ import {
   Loader2,
   Key,
   Lock,
-  Shield
+  Shield,
+  Trash2
 } from 'lucide-react';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+
 
 export default function StrixDetailPage({ params }) {
   const { id } = use(params);
 
+  const router = useRouter();
   const [scanResult, setScanResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -34,6 +39,16 @@ export default function StrixDetailPage({ params }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedVulns, setExpandedVulns] = useState({});
   const [copiedId, setCopiedId] = useState(null);
+
+  // Deletion state
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   useEffect(() => {
     async function fetchDetail() {
@@ -58,6 +73,30 @@ export default function StrixDetailPage({ params }) {
     }
     fetchDetail();
   }, [id]);
+
+  const handleDeleteConfirm = async (password) => {
+    if (!itemToDelete) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/strix/${id}?password=${encodeURIComponent(password)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        showToast('Audit report deleted successfully.', 'success');
+        setTimeout(() => {
+          router.push('/strix');
+        }, 600);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Failed to delete audit. Please check password.', 'error');
+      }
+    } catch (err) {
+      showToast(err.message || 'Error deleting audit.', 'error');
+    } finally {
+      setIsDeleting(false);
+      setItemToDelete(null);
+    }
+  };
 
   const toggleVuln = (vId) => {
     setExpandedVulns((prev) => ({ ...prev, [vId]: !prev[vId] }));
@@ -340,6 +379,14 @@ export default function StrixDetailPage({ params }) {
                   <button type="button" className={styles.exportBtn} onClick={() => window.print()}>
                     <Printer size={14} /> Print / PDF
                   </button>
+                  <button
+                    type="button"
+                    className={styles.deleteToolbarBtn}
+                    onClick={() => setItemToDelete(scanResult)}
+                    title="Hapus audit ini"
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
                 </div>
               </div>
 
@@ -436,7 +483,32 @@ export default function StrixDetailPage({ params }) {
             </div>
           )
         )}
+
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmModal
+          isOpen={!!itemToDelete}
+          onClose={() => setItemToDelete(null)}
+          onConfirm={handleDeleteConfirm}
+          isDeleting={isDeleting}
+          item={itemToDelete}
+        />
+
+        {/* Toast Notification */}
+        {toast && (
+          <div
+            className={`${styles.strixToast} ${
+              toast.type === 'success'
+                ? styles.strixToastSuccess
+                : toast.type === 'error'
+                ? styles.strixToastError
+                : styles.strixToastInfo
+            }`}
+          >
+            {toast.msg}
+          </div>
+        )}
       </div>
     </>
   );
 }
+
