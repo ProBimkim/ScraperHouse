@@ -33,7 +33,9 @@ import {
   Layers,
   ListChecks,
   Server,
-  HardDrive
+  HardDrive,
+  Cpu,
+  Camera
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
@@ -915,6 +917,113 @@ export default function StrixPentestPage() {
                           </div>
                         ))}
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Headless Browser & Rotating IP Proxy Telemetry (Puppeteer) */}
+                {scanResult.recon.puppeteerAudit && (
+                  <div 
+                    className={styles.reconCard} 
+                    style={{ 
+                      gridColumn: '1 / -1',
+                      borderColor: scanResult.recon.puppeteerAudit.executed ? 'rgba(56, 189, 248, 0.4)' : 'rgba(245, 158, 11, 0.3)',
+                      background: 'rgba(15, 23, 42, 0.55)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', margin: 0 }}>
+                        <Cpu size={18} />
+                        Headless Browser & Rotating IP Proxy Telemetry (Puppeteer Engine)
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <span className={scanResult.recon.puppeteerAudit.executed ? styles.reconTagSuccess : styles.reconTagWarning}>
+                          {scanResult.recon.puppeteerAudit.executed ? 'Puppeteer: Active & Audited' : 'Puppeteer: Bypassed / Fallback'}
+                        </span>
+                        {scanResult.recon.puppeteerAudit.fallbackTriggered && (
+                          <span className={styles.reconTagWarning}>🛡️ Auto-Fallback Triggered</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Metric Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Active Egress Proxy Routing</div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.85rem', color: '#fbbf24' }}>
+                          {scanResult.recon.puppeteerAudit.proxyUsed || 'Direct (No Proxy)'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>WebRTC STUN Candidate Leaks</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: scanResult.recon.puppeteerAudit.webrtcLeakedIps?.length > 0 ? '#f87171' : '#34d399' }}>
+                          {scanResult.recon.puppeteerAudit.webrtcLeakedIps?.length > 0 
+                            ? `${scanResult.recon.puppeteerAudit.webrtcLeakedIps.length} Computer IP(s) Exposed` 
+                            : 'No WebRTC STUN Leaks Detected'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>DOM Media & Client Secrets</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: (scanResult.recon.puppeteerAudit.clientStorageSecrets?.length > 0 || scanResult.recon.puppeteerAudit.domMediaDiscovered?.length > 0) ? '#fbbf24' : '#cbd5e1' }}>
+                          {scanResult.recon.puppeteerAudit.domMediaDiscovered?.length || 0} Media • {scanResult.recon.puppeteerAudit.clientStorageSecrets?.length || 0} Storage Keys
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Note & Fallback Status */}
+                    {scanResult.recon.puppeteerAudit.note && (
+                      <div style={{ background: 'rgba(2, 6, 23, 0.75)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px', fontSize: '0.85rem', color: '#94a3b8' }}>
+                        <strong>Execution Status:</strong> {scanResult.recon.puppeteerAudit.note}
+                      </div>
+                    )}
+
+                    {/* WebRTC Leaked IPs Details */}
+                    {scanResult.recon.puppeteerAudit.webrtcLeakedIps?.length > 0 && (
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#f87171', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>
+                          WebRTC STUN Leaked Computer IPs ({scanResult.recon.puppeteerAudit.webrtcLeakedIps.length}):
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {scanResult.recon.puppeteerAudit.webrtcLeakedIps.map((ip, ipIdx) => (
+                            <span key={ipIdx} className={styles.reconTagDanger} style={{ fontFamily: 'monospace' }}>
+                              🚨 {ip} (Disclosed via RTCPeerConnection)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Client Storage Secrets */}
+                    {scanResult.recon.puppeteerAudit.clientStorageSecrets?.length > 0 && (
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>
+                          Extracted Client Storage Secrets (localStorage / sessionStorage):
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {scanResult.recon.puppeteerAudit.clientStorageSecrets.map((sec, sIdx) => (
+                            <div key={sIdx} style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '6px', padding: '6px 10px', fontFamily: 'monospace', fontSize: '0.8rem', color: '#fde68a' }}>
+                              {sec}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Visual Proof Screenshot Preview */}
+                    {scanResult.recon.puppeteerAudit.screenshotProof && (
+                      <details style={{ marginTop: '10px' }}>
+                        <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: '#38bdf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <Camera size={16} /> View Puppeteer Live Render Screenshot Proof
+                        </summary>
+                        <div className={styles.screenshotContainer}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img 
+                            src={scanResult.recon.puppeteerAudit.screenshotProof} 
+                            alt="Puppeteer Audit Screenshot Proof" 
+                            className={styles.screenshotImg}
+                          />
+                        </div>
+                      </details>
                     )}
                   </div>
                 )}

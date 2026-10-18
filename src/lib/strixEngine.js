@@ -1,5 +1,9 @@
 import { getGroqClient } from '@/lib/diagramGenerator';
 import dns from 'dns';
+import chromium from '@sparticuz/chromium-min';
+import puppeteerCore from 'puppeteer-core';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import nodeFetch from 'node-fetch';
 import { 
   parseGitHubUrl, 
   fetchRepoMetadata, 
@@ -8,6 +12,336 @@ import {
   fetchKeyFilesContent, 
   formatTreeStructure 
 } from '@/lib/github';
+
+// --- IP Rotating Proxy & Stealth Configuration ---
+const PROXY_LIST_ENV = process.env.PROXY_LIST || process.env.PROXY_URL || '';
+const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim()).filter(p => p.length > 0);
+
+export function getRandomProxy() {
+  if (PROXIES.length === 0) return null;
+  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+}
+
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+];
+
+export function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+/**
+ * Performs resilient HTTP fetch with rotating proxy support and automatic direct fallback.
+ */
+export async function resilientFetch(url, options = {}) {
+  const activeProxy = getRandomProxy();
+  const userAgent = getRandomUserAgent();
+  const mergedHeaders = {
+    'User-Agent': userAgent,
+    ...(options.headers || {}),
+  };
+
+  if (!activeProxy) {
+    return await fetch(url, { ...options, headers: mergedHeaders });
+  }
+
+  try {
+    const proxyAgent = new HttpsProxyAgent(activeProxy);
+    const controller = new AbortController();
+    const timeoutMs = options.timeoutMs || 8000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await nodeFetch(url, {
+      ...options,
+      headers: mergedHeaders,
+      agent: proxyAgent,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (err) {
+    console.warn(`[Strix Engine] Proxy fetch failed via ${activeProxy} for ${url} (${err.message}). Falling back to direct connection.`);
+    return await fetch(url, { ...options, headers: mergedHeaders });
+  }
+}
+
+/**
+ * Launches Puppeteer browser in Production or Local Dev with proxy rotation and stealth.
+ */
+async function launchPuppeteerBrowser(activeProxy = null) {
+  const isProd = process.env.NODE_ENV === 'production';
+  let launchArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--disable-gpu',
+  ];
+  if (isProd) {
+    launchArgs.push(...chromium.args);
+  }
+
+  let proxyAuth = null;
+  if (activeProxy) {
+    try {
+      const proxyUrlObj = new URL(activeProxy);
+      launchArgs.push(`--proxy-server=${proxyUrlObj.host}`);
+      if (proxyUrlObj.username || proxyUrlObj.password) {
+        proxyAuth = {
+          username: decodeURIComponent(proxyUrlObj.username),
+          password: decodeURIComponent(proxyUrlObj.password),
+        };
+      }
+    } catch {
+      // Invalid proxy URL, ignore
+    }
+  }
+
+  let browser;
+  if (isProd) {
+    const executablePath = await chromium.executablePath(
+      'https://github.com/Sparticuz/chromium/releases/download/v121.0.0/chromium-v121.0.0-pack.tar'
+    );
+    browser = await puppeteerCore.launch({
+      args: launchArgs,
+      defaultViewport: chromium.defaultViewport || { width: 1280, height: 800 },
+      executablePath,
+      headless: chromium.headless,
+    });
+  } else {
+    const basePuppeteer = (await import('puppeteer')).default;
+    browser = await basePuppeteer.launch({
+      headless: 'new',
+      args: launchArgs,
+    });
+  }
+
+  return { browser, proxyAuth };
+}
+
+/**
+ * Executes a Deep Headless Browser Audit via Puppeteer with rotating proxy,
+ * WebRTC STUN IP leak detection, client storage scanning, DOM media discovery, and screenshot capture.
+ */
+export async function auditWithPuppeteer(targetUrl) {
+  const auditResult = {
+    executed: false,
+    proxyUsed: 'Direct',
+    fallbackTriggered: false,
+    webrtcLeakedIps: [],
+    domMediaDiscovered: [],
+    clientStorageSecrets: [],
+    screenshotProof: '',
+    note: '',
+  };
+
+  const activeProxy = getRandomProxy();
+  auditResult.proxyUsed = activeProxy ? activeProxy.replace(/\/\/[^:]+:[^@]+@/, '//***:***@') : 'Direct (No Proxy Configured)';
+
+  let browser = null;
+
+  try {
+    let launchResult;
+    try {
+      launchResult = await launchPuppeteerBrowser(activeProxy);
+      browser = launchResult.browser;
+    } catch (launchErr) {
+      if (activeProxy) {
+        console.warn(`[Puppeteer] Failed launching browser with proxy ${activeProxy} (${launchErr.message}). Retrying directly.`);
+        auditResult.fallbackTriggered = true;
+        auditResult.proxyUsed = 'Direct (Proxy Launch Fallback)';
+        launchResult = await launchPuppeteerBrowser(null);
+        browser = launchResult.browser;
+      } else {
+        throw launchErr;
+      }
+    }
+
+    let page = await browser.newPage();
+    if (launchResult.proxyAuth) {
+      await page.authenticate(launchResult.proxyAuth);
+    }
+
+    const ua = getRandomUserAgent();
+    await page.setUserAgent(ua);
+    await page.setViewport({ width: 1280, height: 720 });
+
+    // Anti-detection stealth
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+
+    // Intercept network requests for media & key leaks
+    const interceptedMedia = new Set();
+    page.on('response', (response) => {
+      try {
+        const rUrl = response.url();
+        const cType = (response.headers()['content-type'] || '').toLowerCase();
+        if (
+          rUrl.includes('/storage') || 
+          rUrl.includes('/media') || 
+          rUrl.includes('/uploads') || 
+          rUrl.includes('/files') ||
+          cType.startsWith('image/') || 
+          cType.startsWith('video/') ||
+          cType.includes('pdf')
+        ) {
+          interceptedMedia.add(rUrl);
+        }
+      } catch {}
+    });
+
+    // Navigate with proxy fallback
+    try {
+      await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+    } catch (navErr) {
+      if ((navErr.message.includes('ERR_PROXY_CONNECTION_FAILED') || navErr.message.includes('ERR_TIMED_OUT')) && activeProxy) {
+        console.warn(`[Puppeteer] Navigation with proxy failed: ${navErr.message}. Retrying without proxy...`);
+        auditResult.fallbackTriggered = true;
+        auditResult.proxyUsed = 'Direct (Proxy Navigation Fallback)';
+        await browser.close();
+        browser = null;
+
+        // Relaunch direct without proxy
+        const directLaunch = await launchPuppeteerBrowser(null);
+        browser = directLaunch.browser;
+        page = await browser.newPage();
+        await page.setUserAgent(ua);
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      } else {
+        // Fallback to domcontentloaded or proceed with current DOM
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        } catch {
+          // Continue to evaluate whatever DOM is loaded
+        }
+      }
+    }
+
+    auditResult.executed = true;
+
+    // 1. WebRTC STUN IP Leak Probe in Live Browser
+    try {
+      const leakedIps = await page.evaluate(async () => {
+        return new Promise((resolve) => {
+          const ips = new Set();
+          try {
+            const rtc = new window.RTCPeerConnection({
+              iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+            rtc.createDataChannel('strix-webrtc-audit');
+            rtc.onicecandidate = (event) => {
+              if (event && event.candidate && event.candidate.candidate) {
+                const cand = event.candidate.candidate;
+                const match = cand.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+                if (match) ips.add(match[0]);
+              } else if (!event || !event.candidate) {
+                resolve(Array.from(ips));
+              }
+            };
+            rtc.createOffer()
+              .then(offer => rtc.setLocalDescription(offer))
+              .catch(() => resolve([]));
+            setTimeout(() => resolve(Array.from(ips)), 2000);
+          } catch {
+            resolve([]);
+          }
+        });
+      });
+
+      if (Array.isArray(leakedIps)) {
+        auditResult.webrtcLeakedIps = leakedIps;
+      }
+    } catch {
+      // WebRTC probe exception fallback
+    }
+
+    // 2. Client-side Media, LocalStorage & SessionStorage Encryption Secret Audit
+    try {
+      const clientStorageAndMedia = await page.evaluate(() => {
+        const foundSecrets = [];
+        const mediaUrls = [];
+
+        // Scan localStorage
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            const v = localStorage.getItem(k);
+            if (/(crypto|token|cipher|secret|encrypt|media|storage|aes|key|auth|session)/i.test(k) || /(aes|bearer|eyj)/i.test(v)) {
+              foundSecrets.push(`localStorage['${k}'] = ${String(v).slice(0, 80)}`);
+            }
+          }
+        } catch {}
+
+        // Scan sessionStorage
+        try {
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const k = sessionStorage.key(i);
+            const v = sessionStorage.getItem(k);
+            if (/(crypto|token|cipher|secret|encrypt|media|storage|aes|key|auth|session)/i.test(k) || /(aes|bearer|eyj)/i.test(v)) {
+              foundSecrets.push(`sessionStorage['${k}'] = ${String(v).slice(0, 80)}`);
+            }
+          }
+        } catch {}
+
+        // Scan DOM for media sources
+        try {
+          const mediaElements = document.querySelectorAll('img, video, audio, source, a[href*="storage"], a[href*="media"], a[href*="upload"]');
+          mediaElements.forEach(el => {
+            const src = el.src || el.href || el.getAttribute('src') || el.getAttribute('href');
+            if (src && (src.includes('/storage') || src.includes('/media') || src.includes('/uploads') || src.startsWith('blob:'))) {
+              mediaUrls.push(src);
+            }
+          });
+        } catch {}
+
+        return { foundSecrets, mediaUrls };
+      });
+
+      auditResult.clientStorageSecrets = clientStorageAndMedia.foundSecrets || [];
+      const combinedMedia = new Set([
+        ...clientStorageAndMedia.mediaUrls,
+        ...Array.from(interceptedMedia),
+      ]);
+      auditResult.domMediaDiscovered = Array.from(combinedMedia).slice(0, 15);
+    } catch {
+      // DOM audit fallback
+    }
+
+    // 3. Visual Proof Screenshot
+    try {
+      const screenshotBuffer = await page.screenshot({
+        type: 'jpeg',
+        quality: 60,
+      });
+      auditResult.screenshotProof = `data:image/jpeg;base64,${screenshotBuffer.toString('base64')}`;
+    } catch {
+      // Screenshot error fallback
+    }
+
+    auditResult.note = `Puppeteer headless browser executed successfully (${auditResult.proxyUsed}). Evaluated WebRTC STUN network, client-side storage, and rendered DOM media.`;
+
+  } catch (browserError) {
+    console.warn(`[Strix Engine] Puppeteer execution encountered an error: ${browserError.message}. Seamlessly falling back to native HTTP/DNS probe.`);
+    auditResult.executed = false;
+    auditResult.fallbackTriggered = true;
+    auditResult.note = `Puppeteer launch/render bypassed due to environment constraint (${browserError.message}). Native HTTP/DNS audit completed as fallback.`;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {}
+    }
+  }
+
+  return auditResult;
+}
 
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
@@ -235,7 +569,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
   try {
     const baseController = new AbortController();
     const bTimeout = setTimeout(() => baseController.abort(), 4000);
-    const baseRes = await fetch(targetEndpoint, {
+    const baseRes = await resilientFetch(targetEndpoint, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -258,7 +592,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
   try {
     const sqliController = new AbortController();
     const sTimeout = setTimeout(() => sqliController.abort(), 4000);
-    const sqliRes = await fetch(targetEndpoint, {
+    const sqliRes = await resilientFetch(targetEndpoint, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -304,7 +638,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     try {
       const errController = new AbortController();
       const eTimeout = setTimeout(() => errController.abort(), 4000);
-      const errRes = await fetch(targetEndpoint, {
+      const errRes = await resilientFetch(targetEndpoint, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -348,7 +682,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
   try {
     let hitRateLimit = false;
     for (let i = 0; i < 3; i++) {
-      const rlRes = await fetch(targetEndpoint, {
+      const rlRes = await resilientFetch(targetEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [userField]: `fuzz_test_${i}@probe.internal`, [passField]: '123456' }),
@@ -369,7 +703,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
 /**
  * Perform active reconnaissance on a live HTTP/HTTPS web target.
  */
-export async function probeWebTarget(targetUrl) {
+export async function probeWebTarget(targetUrl, { onProgress } = {}) {
   let normalizedUrl = targetUrl.trim();
   if (!/^https?:\/\//i.test(normalizedUrl)) {
     normalizedUrl = `https://${normalizedUrl}`;
@@ -403,6 +737,16 @@ export async function probeWebTarget(targetUrl) {
       isBehindProxy: false,
       proxyProvider: 'Direct Origin Server',
       evidence: '',
+    },
+    puppeteerAudit: {
+      executed: false,
+      proxyUsed: '',
+      fallbackTriggered: false,
+      webrtcLeakedIps: [],
+      domMediaDiscovered: [],
+      clientStorageSecrets: [],
+      screenshotProof: '',
+      note: '',
     },
   };
 
@@ -439,7 +783,7 @@ export async function probeWebTarget(targetUrl) {
   let timeoutId = setTimeout(() => controller.abort(), 9000);
 
   try {
-    const res = await fetch(normalizedUrl, {
+    const res = await resilientFetch(normalizedUrl, {
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Strix-Pentest/2.0 (Security Audit)',
@@ -620,7 +964,7 @@ export async function probeWebTarget(targetUrl) {
       const pTimeout = setTimeout(() => probeController.abort(), 4500);
       const probeUrl = `${baseUrl}${item.path}`;
 
-      const probeRes = await fetch(probeUrl, {
+      const probeRes = await resilientFetch(probeUrl, {
         method: 'GET',
         headers: { 'User-Agent': 'Strix-Pentest/2.0' },
         signal: probeController.signal,
@@ -750,7 +1094,7 @@ export async function probeWebTarget(targetUrl) {
     try {
       const mController = new AbortController();
       const mTimeout = setTimeout(() => mController.abort(), 3500);
-      const mRes = await fetch(`${normalizedUrl}${mItem.path}`, {
+      const mRes = await resilientFetch(`${normalizedUrl}${mItem.path}`, {
         method: 'GET',
         headers: { 'User-Agent': 'Strix-Pentest/2.0 (Media Encryption Probe)' },
         signal: mController.signal,
@@ -798,6 +1142,62 @@ export async function probeWebTarget(targetUrl) {
   }
 
   reconData.mediaEncryption = mediaEncryption;
+
+  // 6. Deep Headless Browser (Puppeteer) Audit with Rotating IP Proxy & Fallbacks
+  try {
+    if (onProgress) {
+      onProgress({ phase: 'recon', message: 'Launching Puppeteer headless browser with rotating IP proxy for WebRTC & media DOM audit...', progress: 32 });
+    }
+    const puppeteerResult = await auditWithPuppeteer(normalizedUrl);
+    reconData.puppeteerAudit = puppeteerResult;
+
+    // Check if WebRTC leaked any computer/client IPs
+    if (puppeteerResult.webrtcLeakedIps?.length > 0) {
+      for (const leakIp of puppeteerResult.webrtcLeakedIps) {
+        reconData.ipExposure.originIpLeaked = true;
+        const leakDesc = `WebRTC RTCPeerConnection STUN leak: Disclosed client/computer IP: ${leakIp}`;
+        if (!reconData.ipExposure.leakVectors.includes(leakDesc)) {
+          reconData.ipExposure.leakVectors.push(leakDesc);
+        }
+      }
+      reconData.ipExposure.evidence = `WebRTC STUN candidate leak detected via Puppeteer browser execution. Computer IP (${puppeteerResult.webrtcLeakedIps.join(', ')}) is exposed to browser scripts.`;
+      reconData.exposedRisks.push(`WebRTC IP Leak: Client/Host IP ${puppeteerResult.webrtcLeakedIps[0]} exposed via RTCPeerConnection STUN candidate.`);
+    }
+
+    // Check if DOM media was discovered
+    if (puppeteerResult.domMediaDiscovered?.length > 0) {
+      for (const mUrl of puppeteerResult.domMediaDiscovered) {
+        if (!mediaEncryption.leakedMedia.some(m => m.path === mUrl)) {
+          mediaEncryption.leakedMedia.push({
+            path: mUrl,
+            status: 200,
+            issue: 'Client DOM Rendered Media Asset',
+            evidence: `Discovered active media asset in rendered DOM or network stream: ${mUrl}`,
+          });
+        }
+      }
+    }
+
+    // Check if client storage (localStorage / sessionStorage) leaked secrets or encryption keys
+    if (puppeteerResult.clientStorageSecrets?.length > 0) {
+      mediaEncryption.status = 'LEAK_DETECTED';
+      mediaEncryption.evidence += ` Client-side storage disclosed sensitive cryptographic keys/tokens: ${puppeteerResult.clientStorageSecrets.join('; ')}.`;
+      reconData.exposedRisks.push(`Client Storage Key Leak: ${puppeteerResult.clientStorageSecrets[0]}`);
+    }
+
+  } catch (pupErr) {
+    console.warn(`[Strix Engine] Puppeteer audit bypassed with error: ${pupErr.message}. Fallback to native scan succeeded.`);
+    reconData.puppeteerAudit = {
+      executed: false,
+      proxyUsed: 'Direct',
+      fallbackTriggered: true,
+      webrtcLeakedIps: [],
+      domMediaDiscovered: [],
+      clientStorageSecrets: [],
+      screenshotProof: '',
+      note: `Puppeteer headless audit gracefully bypassed (${pupErr.message}). Standard HTTP probe completed.`,
+    };
+  }
 
   return reconData;
 }
@@ -1312,7 +1712,7 @@ export async function runStrixPentest({
   // Phase 1: Target Reconnaissance
   if (targetType === 'url') {
     onProgress({ phase: 'recon', message: 'Probing live target: checking headers, CORS, TLS, and probing sensitive endpoints...', progress: 20 });
-    reconData = await probeWebTarget(target);
+    reconData = await probeWebTarget(target, { onProgress });
 
     // Report discovery stats
     if (reconData.envEndpoints?.length > 0) {
@@ -1364,6 +1764,16 @@ export async function runStrixPentest({
         isBehindProxy: false,
         proxyProvider: 'N/A (Code Snippet)',
         evidence: 'Snippet evaluation - no remote IP address probed.',
+      },
+      puppeteerAudit: {
+        executed: false,
+        proxyUsed: 'N/A (Code Snippet Target)',
+        fallbackTriggered: false,
+        webrtcLeakedIps: [],
+        domMediaDiscovered: [],
+        clientStorageSecrets: [],
+        screenshotProof: '',
+        note: 'Puppeteer browser audit is active for live web & API targets.',
       },
     };
 
@@ -1925,6 +2335,16 @@ proxy_hide_header Server;
       isBehindProxy: true,
       proxyProvider: 'GitHub Managed Infrastructure',
       evidence: 'Target is hosted on GitHub repository infrastructure. Origin server IP is not directly exposed.',
+    },
+    puppeteerAudit: {
+      executed: false,
+      proxyUsed: 'N/A (Repository Static Target)',
+      fallbackTriggered: false,
+      webrtcLeakedIps: [],
+      domMediaDiscovered: [],
+      clientStorageSecrets: [],
+      screenshotProof: '',
+      note: 'Puppeteer browser audit is active for live web & API targets.',
     },
   };
 

@@ -156,6 +156,16 @@ const SecurityScanResultSchema = new mongoose.Schema({
       proxyProvider: { type: String, default: 'Direct Origin' },
       evidence: { type: String, default: '' },
     },
+    puppeteerAudit: {
+      executed: { type: Boolean, default: false },
+      proxyUsed: { type: String, default: '' },
+      fallbackTriggered: { type: Boolean, default: false },
+      webrtcLeakedIps: [{ type: String }],
+      domMediaDiscovered: [{ type: String }],
+      clientStorageSecrets: [{ type: String }],
+      screenshotProof: { type: String, default: '' },
+      note: { type: String, default: '' },
+    },
     repoMetadata: { type: mongoose.Schema.Types.Mixed, default: null },
   },
 
