@@ -19,6 +19,7 @@ export async function POST(req) {
     scanMode = 'standard',
     instruction = '',
     groqApiKey = '',
+    openrouterApiKey = '',
     githubToken = '',
     stream: shouldStream = true,
   } = body;
@@ -60,6 +61,7 @@ export async function POST(req) {
             scanMode,
             instruction,
             groqApiKey,
+            openrouterApiKey,
             githubToken,
             onProgress: (p) => {
               sendEvent('status', { ...p, slug });
@@ -121,6 +123,7 @@ export async function POST(req) {
       scanMode,
       instruction,
       groqApiKey,
+      openrouterApiKey,
       githubToken,
     });
 

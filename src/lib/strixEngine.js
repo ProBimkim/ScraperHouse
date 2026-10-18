@@ -346,6 +346,52 @@ export async function auditWithPuppeteer(targetUrl) {
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const FALLBACK_MODEL = 'llama-3.3-70b-versatile';
 
+export const OPENROUTER_FALLBACK_MODELS = [
+  'nvidia/nemotron-3-super-120b-a12b:free', // 120B parameter top free model, ultra-fast & highly structured JSON compliant
+  'openrouter/free',                        // Dynamic auto-router to the best available free model
+];
+
+/**
+ * Calls OpenRouter Chat Completion API for free model fallback.
+ */
+export async function callOpenRouterCompletion({ messages, model = OPENROUTER_FALLBACK_MODELS[0], maxTokens = 8192, openrouterApiKey = null }) {
+  const effectiveKey = (openrouterApiKey && typeof openrouterApiKey === 'string' ? openrouterApiKey.trim() : '')
+    || process.env.OPENROUTER_API_KEY;
+
+  if (!effectiveKey) {
+    throw new Error('OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in .env.local or provide it in scan settings.');
+  }
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${effectiveKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/ProBimkim/ScraperHouse',
+      'X-Title': 'Strix Autonomous Security Pentest Engine',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      response_format: { type: 'json_object' },
+      max_tokens: maxTokens,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`OpenRouter API error (HTTP ${res.status}): ${errorBody}`);
+  }
+
+  const json = await res.json();
+  const content = json.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error(`OpenRouter model ${model} returned empty completion.`);
+  }
+  return content;
+}
+
 const COMMON_SENSITIVE_PATHS = [
   // Environment and configuration files
   { path: '/.env', desc: 'Environment variables file' },
@@ -1837,6 +1883,7 @@ export async function runStrixPentest({
   scanMode = 'standard',
   instruction = '',
   groqApiKey = '',
+  openrouterApiKey = '',
   githubToken = '',
   onProgress = () => {},
 }) {
@@ -2000,9 +2047,41 @@ export async function runStrixPentest({
     }
   }
 
-  // 3. Guaranteed Deterministic Synthesis if LLM completions both failed
+  // 3. OpenRouter Free AI Fallback (nvidia/nemotron-3-super-120b-a12b:free, openrouter/free)
+  if (!parsedOutput || !Array.isArray(parsedOutput.vulnerabilities)) {
+    console.log('[Strix Engine] Groq completion unavailable. Engaging OpenRouter Free AI fallback...');
+    onProgress({ phase: 'exploitation', message: 'Groq unavailable or rate-limited. Activating OpenRouter Free AI fallback (Nvidia Nemotron 120B)...', progress: 78 });
+
+    for (const orModel of OPENROUTER_FALLBACK_MODELS) {
+      try {
+        console.log(`[Strix Engine] Querying OpenRouter model: ${orModel}...`);
+        const openRouterRaw = await callOpenRouterCompletion({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          model: orModel,
+          maxTokens: 8192,
+          openrouterApiKey,
+        });
+
+        if (openRouterRaw) {
+          const repaired = parseOrRepairJson(openRouterRaw);
+          if (repaired && Array.isArray(repaired.vulnerabilities) && repaired.vulnerabilities.length > 0) {
+            parsedOutput = repaired;
+            console.log(`[Strix Engine] OpenRouter (${orModel}) successfully generated ${parsedOutput.vulnerabilities.length} findings!`);
+            break;
+          }
+        }
+      } catch (orErr) {
+        console.warn(`[Strix Engine] OpenRouter model (${orModel}) error: ${orErr.message}`);
+      }
+    }
+  }
+
+  // 4. Guaranteed Deterministic Synthesis if all LLM options fail
   if (!parsedOutput || typeof parsedOutput !== 'object') {
-    console.warn('[Strix Engine] All LLM completions exhausted. Synthesizing deterministic findings from active reconnaissance.');
+    console.warn('[Strix Engine] All LLM providers exhausted. Synthesizing deterministic findings from active reconnaissance.');
     parsedOutput = {
       executiveSummary: `Autonomous security scan concluded for ${target}. The assessment was compiled directly from active reconnaissance telemetry, HTTP inspection, security header analysis, and client-side browser auditing.`,
       riskScore: (reconData?.adminEndpoints?.some(a => a.accessible) || (reconData?.envEndpoints?.length || 0) > 0) ? 85 : 55,

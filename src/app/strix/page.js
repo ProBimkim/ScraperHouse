@@ -51,6 +51,7 @@ export default function StrixPentestPage() {
   const [scanMode, setScanMode] = useState('standard');
   const [instruction, setInstruction] = useState('');
   const [customGroqKey, setCustomGroqKey] = useState('');
+  const [customOpenRouterKey, setCustomOpenRouterKey] = useState('');
   const [customGithubToken, setCustomGithubToken] = useState('');
 
   // Execution & Progress state
@@ -122,6 +123,7 @@ export default function StrixPentestPage() {
           scanMode,
           instruction: instruction.trim(),
           groqApiKey: customGroqKey.trim(),
+          openrouterApiKey: customOpenRouterKey.trim(),
           githubToken: customGithubToken.trim(),
           stream: true,
         }),
@@ -504,6 +506,19 @@ export default function StrixPentestPage() {
                     placeholder="gsk_... (Defaults to system env)"
                     value={customGroqKey}
                     onChange={(e) => setCustomGroqKey(e.target.value)}
+                    disabled={isScanning}
+                  />
+                </div>
+
+                <div>
+                  <label className={styles.formLabel}>OpenRouter API Key (Fallback AI - Optional)</label>
+                  <input
+                    type="password"
+                    className={styles.textInput}
+                    style={{ paddingLeft: '14px' }}
+                    placeholder="sk-or-v1-... (Defaults to system env free tier)"
+                    value={customOpenRouterKey}
+                    onChange={(e) => setCustomOpenRouterKey(e.target.value)}
                     disabled={isScanning}
                   />
                 </div>
