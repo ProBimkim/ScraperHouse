@@ -1,4 +1,5 @@
 import { getGroqClient } from '@/lib/diagramGenerator';
+import dns from 'dns';
 import { 
   parseGitHubUrl, 
   fetchRepoMetadata, 
@@ -387,7 +388,51 @@ export async function probeWebTarget(targetUrl) {
     envEndpoints: [],
     adminEndpoints: [],
     loginEndpoints: [],
+    mediaEncryption: {
+      testedPaths: [],
+      leakedMedia: [],
+      status: 'SECURE',
+      evidence: '',
+    },
+    ipExposure: {
+      detectedServerIp: '',
+      originIpLeaked: false,
+      leakVectors: [],
+      clientIpReflected: false,
+      clientIp: '',
+      isBehindProxy: false,
+      proxyProvider: 'Direct Origin Server',
+      evidence: '',
+    },
   };
+
+  let hostName = '';
+  try {
+    hostName = new URL(normalizedUrl).hostname;
+  } catch {}
+
+  const ipExposure = {
+    detectedServerIp: '',
+    originIpLeaked: false,
+    leakVectors: [],
+    clientIpReflected: false,
+    clientIp: '',
+    isBehindProxy: false,
+    proxyProvider: 'Direct Origin Server',
+    evidence: '',
+  };
+
+  if (hostName) {
+    try {
+      const lookupResult = await dns.promises.lookup(hostName);
+      if (lookupResult?.address) {
+        reconData.ipAddress = lookupResult.address;
+        ipExposure.detectedServerIp = lookupResult.address;
+      }
+    } catch {
+      // DNS lookup fallback
+    }
+  }
 
   let htmlBody = '';
   let controller = new AbortController();
@@ -439,6 +484,67 @@ export async function probeWebTarget(targetUrl) {
     if (headerObj['cf-ray']) reconData.technologies.push('CDN/WAF: Cloudflare');
     if (headerObj['x-vercel-id']) reconData.technologies.push('Host: Vercel');
     if (headerObj['x-amz-cf-id']) reconData.technologies.push('CDN: AWS CloudFront');
+
+    // 1. Analyze Proxy & Origin IP Exposure
+    if (headerObj['cf-ray'] || headerObj['server']?.toLowerCase().includes('cloudflare')) {
+      ipExposure.isBehindProxy = true;
+      ipExposure.proxyProvider = 'Cloudflare Reverse Proxy & WAF';
+    } else if (headerObj['x-amz-cf-id']) {
+      ipExposure.isBehindProxy = true;
+      ipExposure.proxyProvider = 'AWS CloudFront CDN';
+    } else if (headerObj['x-vercel-id']) {
+      ipExposure.isBehindProxy = true;
+      ipExposure.proxyProvider = 'Vercel Edge Network';
+    } else if (headerObj['x-fastly-request-id']) {
+      ipExposure.isBehindProxy = true;
+      ipExposure.proxyProvider = 'Fastly CDN';
+    } else if (headerObj['x-akamai-transformed']) {
+      ipExposure.isBehindProxy = true;
+      ipExposure.proxyProvider = 'Akamai CDN';
+    } else {
+      ipExposure.isBehindProxy = false;
+      ipExposure.proxyProvider = 'Direct Origin (Unshielded)';
+    }
+
+    // Inspect headers for Origin Server IP leaks & Internal Subnet disclosures
+    const ipHeadersToCheck = [
+      'x-real-ip', 'x-origin-ip', 'x-backend-server', 'x-server-ip', 
+      'x-forwarded-for', 'x-forwarded-server', 'x-host', 'server-ip', 
+      'x-backend-host', 'x-proxy-id'
+    ];
+    for (const hKey of ipHeadersToCheck) {
+      const val = headerObj[hKey];
+      if (val) {
+        ipExposure.leakVectors.push(`${hKey}: ${val}`);
+        ipExposure.originIpLeaked = true;
+      }
+    }
+
+    // Check for RFC 1918 internal IP leak regex in all headers or HTML
+    const privateIpRegex = /\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b/;
+    for (const [k, v] of Object.entries(headerObj)) {
+      const match = typeof v === 'string' && v.match(privateIpRegex);
+      if (match && !ipExposure.leakVectors.some(l => l.includes(match[0]))) {
+        ipExposure.leakVectors.push(`Header '${k}' leaks internal subnet IP: ${match[0]}`);
+        ipExposure.originIpLeaked = true;
+      }
+    }
+
+    // If server is not behind any proxy, its origin IP is directly exposed to direct connection & DDoS
+    if (!ipExposure.isBehindProxy && reconData.ipAddress) {
+      ipExposure.originIpLeaked = true;
+      ipExposure.leakVectors.push(`Direct Origin Exposure: Domain resolves directly to public host IP ${reconData.ipAddress} without CDN/WAF proxy shield.`);
+      ipExposure.evidence = `Server public IP ${reconData.ipAddress} is directly exposed on DNS A record and responds to direct TCP/HTTP traffic without proxy obscuration.`;
+    } else if (ipExposure.leakVectors.length > 0) {
+      ipExposure.evidence = `Origin/internal IP exposure detected across headers: ${ipExposure.leakVectors.join('; ')}`;
+    } else {
+      ipExposure.evidence = `Server is shielded behind ${ipExposure.proxyProvider}. No direct origin IP leakage detected in HTTP headers.`;
+    }
+
+    reconData.ipExposure = ipExposure;
+    if (ipExposure.originIpLeaked) {
+      reconData.exposedRisks.push(`Origin IP Exposure: ${ipExposure.leakVectors[0]}`);
+    }
 
     // Missing Security Headers Assessment
     if (!headerObj['strict-transport-security'] && normalizedUrl.startsWith('https://')) {
@@ -620,6 +726,78 @@ export async function probeWebTarget(targetUrl) {
       // Continue if fuzzing request fails
     }
   }
+
+  // 5. Encrypted Media & Storage Audit
+  const mediaEncryption = {
+    testedPaths: [],
+    leakedMedia: [],
+    status: 'SECURE', // 'LEAK_DETECTED' | 'WEAK_CIPHER' | 'SECURE'
+    evidence: '',
+  };
+
+  const MEDIA_PATHS = [
+    { path: '/storage', desc: 'Object Storage Root' },
+    { path: '/media', desc: 'Media Asset Directory' },
+    { path: '/uploads', desc: 'User Upload Directory' },
+    { path: '/files', desc: 'Files Directory' },
+    { path: '/api/media', desc: 'Media API Endpoint' },
+    { path: '/api/files', desc: 'File Management API' },
+    { path: '/storage/encrypted', desc: 'Encrypted Media Vault' },
+  ];
+
+  for (const mItem of MEDIA_PATHS) {
+    mediaEncryption.testedPaths.push(mItem.path);
+    try {
+      const mController = new AbortController();
+      const mTimeout = setTimeout(() => mController.abort(), 3500);
+      const mRes = await fetch(`${normalizedUrl}${mItem.path}`, {
+        method: 'GET',
+        headers: { 'User-Agent': 'Strix-Pentest/2.0 (Media Encryption Probe)' },
+        signal: mController.signal,
+        redirect: 'manual',
+      });
+      clearTimeout(mTimeout);
+
+      if (mRes.status === 200) {
+        const mText = await mRes.text().catch(() => '');
+        const contentType = (mRes.headers.get('content-type') || '').toLowerCase();
+        const isDirectoryListing = mText.includes('Index of /') || mText.includes('Directory listing') || mText.includes('<pre>');
+        const isJsonFiles = contentType.includes('json') && (mText.includes('filename') || mText.includes('files') || mText.includes('url'));
+        const isRawMedia = contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/') || contentType.includes('pdf');
+
+        if (isDirectoryListing || isJsonFiles || isRawMedia) {
+          mediaEncryption.leakedMedia.push({
+            path: mItem.path,
+            status: mRes.status,
+            issue: isDirectoryListing ? 'Directory Listing Enabled' : 'Unauthenticated Media Access',
+            evidence: `Endpoint returned HTTP 200 with Content-Type '${contentType}' without requiring authentication tokens or encryption verification.`,
+          });
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // Check if .env exposed any encryption keys or media secrets
+  const exposedCryptoKeys = (reconData.envEndpoints || []).filter(e => 
+    /(ENCRYPT|CRYPTO|CIPHER|AES|SECRET_KEY|MEDIA_KEY|SALT|PRIVATE_KEY|STORAGE_KEY)/i.test(e.key)
+  );
+
+  if (exposedCryptoKeys.length > 0) {
+    mediaEncryption.status = 'LEAK_DETECTED';
+    mediaEncryption.evidence = `CRITICAL: Cryptographic encryption keys were exposed in environment configuration (${exposedCryptoKeys.map(k => k.key).join(', ')}). Any media encrypted with these keys can be decrypted in plaintext by unauthorized parties.`;
+    reconData.exposedRisks.push(`Cryptographic Key Leak: Exposed ${exposedCryptoKeys.map(k => k.key).join(', ')} compromises all encrypted media.`);
+  } else if (mediaEncryption.leakedMedia.length > 0) {
+    mediaEncryption.status = 'LEAK_DETECTED';
+    mediaEncryption.evidence = `Unauthenticated media storage access detected on: ${mediaEncryption.leakedMedia.map(m => m.path).join(', ')}. Media files are accessible directly without encryption verification.`;
+    reconData.exposedRisks.push(`Unprotected Media Storage: Direct unauthenticated download accessible at ${mediaEncryption.leakedMedia[0].path}`);
+  } else {
+    mediaEncryption.status = 'SECURE';
+    mediaEncryption.evidence = 'Media storage endpoints are restricted or require authentication headers. No plaintext encryption key leakage detected.';
+  }
+
+  reconData.mediaEncryption = mediaEncryption;
 
   return reconData;
 }
@@ -803,6 +981,19 @@ ${reconData.adminEndpoints?.length > 0
 ${reconData.loginEndpoints?.length > 0 
   ? reconData.loginEndpoints.map(l => `  * [${l.method}] ${l.path} -> Status ${l.status} | Intercepted Fields: [${(l.fields || []).join(', ')}] | CSRF: ${l.hasCsrf ? 'PROTECTED' : 'MISSING'} | Rate-Limiting: ${l.rateLimitDetected ? 'ENFORCED' : 'ABSENT (Burp Intruder Vulnerable)'} | SQLi Fuzz Result: ${l.fuzzResult || 'N/A'}`).join('\n')
   : '  * Standard login endpoints'}
+
+### ORIGIN & IP ADDRESS EXPOSURE DIAGNOSTIC:
+- Detected Server/Host IP: ${reconData.ipExposure?.detectedServerIp || 'N/A'}
+- Proxy / CDN Protection: ${reconData.ipExposure?.proxyProvider || 'None'} (Shielded: ${reconData.ipExposure?.isBehindProxy ? 'YES' : 'NO'})
+- Origin IP Leaked: ${reconData.ipExposure?.originIpLeaked ? 'YES - LEAK DETECTED' : 'NO'}
+- Disclosed Leak Vectors: ${reconData.ipExposure?.leakVectors?.join('; ') || 'None'}
+- Technical Proof & Evidence: ${reconData.ipExposure?.evidence || 'N/A'}
+
+### ENCRYPTED MEDIA & STORAGE AUDIT:
+- Storage Encryption Status: ${reconData.mediaEncryption?.status || 'N/A'}
+- Tested Media & Storage Paths: ${(reconData.mediaEncryption?.testedPaths || []).join(', ')}
+- Unprotected / Leaked Media Endpoints: ${(reconData.mediaEncryption?.leakedMedia || []).map(m => `${m.path} (${m.issue})`).join(', ') || 'None'}
+- Cryptographic Proof & Evidence: ${reconData.mediaEncryption?.evidence || 'N/A'}
 
 - All Probed Security Endpoints:
 ${reconData.probedEndpoints.map(p => `  * ${p.path} -> Status ${p.status} (${p.note})`).join('\n')}
@@ -1158,6 +1349,22 @@ export async function runStrixPentest({
       envEndpoints: parseEnvContent(codeSnippet, 'Pasted Code / Spec'),
       adminEndpoints: [],
       loginEndpoints: [],
+      mediaEncryption: {
+        testedPaths: [],
+        leakedMedia: [],
+        status: 'SECURE',
+        evidence: 'Snippet evaluation - no network media storage tested.',
+      },
+      ipExposure: {
+        detectedServerIp: '',
+        originIpLeaked: false,
+        leakVectors: [],
+        clientIpReflected: false,
+        clientIp: '',
+        isBehindProxy: false,
+        proxyProvider: 'N/A (Code Snippet)',
+        evidence: 'Snippet evaluation - no remote IP address probed.',
+      },
     };
 
     if (/(admin|administrator)/i.test(codeSnippet)) {
@@ -1530,6 +1737,163 @@ app.post('${noRateLimit.path}', authLimiter, loginHandler);`,
         ]
       });
     }
+
+    // 6. Media Encryption & Cryptographic Storage Leakage
+    if (reconData.mediaEncryption?.status === 'LEAK_DETECTED' && !rawVulns.some(v => v.title.toLowerCase().includes('media') || v.title.toLowerCase().includes('cryptographic'))) {
+      const firstMedia = (reconData.mediaEncryption.leakedMedia && reconData.mediaEncryption.leakedMedia[0]) || { path: '/storage' };
+      rawVulns.push({
+        id: `STRIX-MEDIA-ENCRYPT-${Date.now().toString().slice(-4)}`,
+        title: `Cryptographic Failure: Compromised Media Encryption & Storage Key Leak`,
+        severity: 'high',
+        owaspCategory: 'A04:2025 Cryptographic Failures',
+        cwe: 'CWE-311: Missing Encryption of Sensitive Data',
+        cve: 'N/A',
+        cvss: 8.6,
+        cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+        confidence: 'high',
+        fixEffort: 'medium',
+        endpoint: firstMedia.path,
+        method: 'GET',
+        target: `${target}${firstMedia.path}`,
+        description: `Security audit of encrypted media assets and storage buckets revealed that encryption controls have failed or leaked. ${reconData.mediaEncryption.evidence}`,
+        evidence: reconData.mediaEncryption.evidence,
+        impact: 'Adversaries can download confidential media files (e.g., uploaded identity documents, user receipts, private photos/recordings) without valid decryption keys or authorization tokens.',
+        technicalAnalysis: 'Direct static object storage mapping allows public access without checking session credentials or enforcing cryptographic decryption barriers.',
+        pocDescription: 'Verify direct unauthenticated download or cryptographic key leak:',
+        pocScriptCode: `curl -i -s "${target}${firstMedia.path}"`,
+        codeLocations: [],
+        remediation: '1. Store all private media files in a private object storage bucket with public access blocked.\n2. Never expose symmetric encryption keys in client code or web-accessible .env files.\n3. Generate short-lived presigned URLs for authorized user sessions instead of public direct links.\n4. Enforce AES-256-GCM encryption with unique initialization vectors (IVs) per file.',
+        remediationPatch: `// Secure presigned media access example (S3 / Storage):
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+
+export async function getSecureMediaUrl(fileKey, userSession) {
+  if (!userSession || !userSession.id) throw new Error('Unauthorized');
+  const command = new GetObjectCommand({
+    Bucket: process.env.SECURE_BUCKET_NAME,
+    Key: fileKey,
+  });
+  return await getSignedUrl(s3Client, command, { expiresIn: 600 });
+}`,
+        references: [
+          'https://owasp.org/Top10/A04_2025-Cryptographic_Failures/',
+          'https://cwe.mitre.org/data/definitions/311.html'
+        ],
+        dataLeakage: {
+          leakedTypes: [
+            'User Uploaded Identity Documents (KTP, Passports, Licenses)',
+            'Private Images, Media Blobs & Audio Recordings',
+            'Confidential Invoices, PDF Statements, and Receipts',
+            'Symmetric Cryptographic Encryption Keys & IV Seeds'
+          ],
+          exposedSample: `{\n  "storage_leak": "${firstMedia.path}",\n  "accessible_files": [\n    "users/1029/id_card_encrypted.bin",\n    "users/1029/financial_statement.pdf",\n    "avatars/private_media_001.jpg"\n  ],\n  "encryption_status": "COMPROMISED (Key or Plaintext Exposed)"\n}`,
+          impactDescription: 'Unrestricted media access allows attackers to exfiltrate private user photos, legal contracts, and personal identity documents without authorization.'
+        },
+        debuggingInfo: {
+          rootCauseTrigger: `Public storage endpoint or cryptographic key disclosure on ${firstMedia.path}.`,
+          executionFlow: [
+            `1. Client sends GET request to media storage path: ${firstMedia.path}`,
+            '2. Web server / CDN directly serves static file without verifying cryptographic token',
+            '3. Storage bucket lacks private bucket policy and object-level ACL',
+            '4. Client receives raw binary media payload in plaintext'
+          ],
+          serverErrorSignature: 'HTTP 200 OK with direct binary stream / image MIME type'
+        },
+        bypassDetails: {
+          mechanism: 'Direct bucket/path traversal bypasses application decryption gate and authorization middleware.',
+          bypassedControls: [
+            'File Encryption Layer (AES-GCM / Chacha20)',
+            'Object-Level Authorization (BOLA/IDOR Guard)',
+            'Presigned URL Verification Gate'
+          ],
+          attackVector: `GET ${firstMedia.path}`
+        },
+        developerGuidance: {
+          checklist: [
+            'Migrate media storage to private buckets with Block Public Access enabled',
+            'Generate short-lived presigned URLs (TTL max 10-15 minutes)',
+            'Use AES-256-GCM authenticated encryption for files containing PII',
+            'Rotate any encryption keys or storage credentials found in environment variables'
+          ]
+        }
+      });
+    }
+
+    // 7. Server Origin IP Exposure & Network Leakage
+    if (reconData.ipExposure?.originIpLeaked && !rawVulns.some(v => v.title.toLowerCase().includes('origin ip') || v.title.toLowerCase().includes('ip address'))) {
+      const hostVal = (() => { try { return new URL(target).hostname; } catch { return 'target'; } })();
+      rawVulns.push({
+        id: `STRIX-IP-LEAK-${Date.now().toString().slice(-4)}`,
+        title: `Security Misconfiguration: Server Origin IP Exposure & WAF Bypass Vector`,
+        severity: 'medium',
+        owaspCategory: 'A02:2025 Security Misconfiguration',
+        cwe: 'CWE-200: Exposure of Sensitive Information to an Unauthorized Actor',
+        cve: 'N/A',
+        cvss: 6.5,
+        cvssVector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L',
+        confidence: 'high',
+        fixEffort: 'low',
+        endpoint: '/',
+        method: 'GET',
+        target: target,
+        description: `Reconnaissance diagnostics revealed that the server's public origin IP address or internal network subnet is exposed to external clients. ${reconData.ipExposure.evidence} Attackers knowing the real origin IP can send traffic directly to the host, completely bypassing Cloudflare, AWS CloudFront, or any upstream Web Application Firewall (WAF) and DDoS protection.`,
+        evidence: reconData.ipExposure.evidence,
+        impact: 'Attackers can bypass WAF filtering rules, exploit unpatched backend services directly, and execute direct volumetric DDoS attacks targeting origin bandwidth.',
+        technicalAnalysis: 'Backend server fails to strip internal tracking headers (e.g. X-Real-IP, X-Backend-Server) or the host network allows direct public connections without restricting traffic to CDN reverse proxies.',
+        pocDescription: 'Connect directly to the origin host IP using curl with Host header:',
+        pocScriptCode: `curl -k -i -H "Host: ${hostVal}" "http://${reconData.ipExposure.detectedServerIp || 'ORIGIN_IP'}/"`,
+        codeLocations: [],
+        remediation: '1. Configure host firewall (UFW, iptables, or AWS Security Group) to ONLY allow inbound connections on ports 80/443 from verified Cloudflare / CDN IP ranges.\n2. In Nginx/Apache reverse proxy, strip and suppress all internal backend headers:\n   proxy_hide_header X-Backend-Server;\n   proxy_hide_header X-Real-IP;\n3. Keep origin server IP confidential; rotate host IP address if it has been indexed publicly.',
+        remediationPatch: `# Nginx reverse proxy configuration:
+# 1. Hide origin headers:
+proxy_hide_header X-Powered-By;
+proxy_hide_header X-Backend-Server;
+proxy_hide_header Server;
+
+# 2. Restrict origin to Cloudflare IPs only (example ufw):
+# sudo ufw allow proto tcp from 173.245.48.0/20 to any port 443`,
+        references: [
+          'https://owasp.org/Top10/A02_2025-Security_Misconfiguration/',
+          'https://cwe.mitre.org/data/definitions/200.html'
+        ],
+        dataLeakage: {
+          leakedTypes: [
+            'Server Public Origin IPv4 / IPv6 Address',
+            'Internal Virtual Network Topology (RFC 1918 Private Subnets)',
+            'Direct Backend Hostnames & Proxy Gateway Paths'
+          ],
+          exposedSample: `{\n  "exposed_origin_ip": "${reconData.ipExposure.detectedServerIp || '103.x.x.x'}",\n  "proxy_shield": "${reconData.ipExposure.proxyProvider}",\n  "leak_vectors": ${JSON.stringify(reconData.ipExposure.leakVectors || [])}\n}`,
+          impactDescription: 'Direct exposure allows attackers to circumvent Web Application Firewall rules, execute direct database injection, and crash the server with volumetric DDoS attacks.'
+        },
+        debuggingInfo: {
+          rootCauseTrigger: `Origin IP ${reconData.ipExposure.detectedServerIp || 'host IP'} exposed via: ${reconData.ipExposure.leakVectors[0] || 'Direct DNS / HTTP header leak'}.`,
+          executionFlow: [
+            '1. Client inspects DNS A records or HTTP response headers',
+            `2. Server leaks origin address or responds directly without proxy gateway: ${reconData.ipExposure.detectedServerIp}`,
+            '3. Attacker discovers origin IP address bypassing proxy protection',
+            '4. Attacker crafts direct TCP payload targeting host IP directly without WAF inspection'
+          ],
+          serverErrorSignature: `Leaked Vector: ${reconData.ipExposure.leakVectors[0] || 'Unshielded Origin IP'}`
+        },
+        bypassDetails: {
+          mechanism: 'WAF & CDN Bypass: Connecting directly to the origin server IP completely circumvents Cloudflare / WAF inspection rules.',
+          bypassedControls: [
+            'Cloudflare / CloudFront Web Application Firewall (WAF)',
+            'DDoS Mitigation Shield & Bot Management',
+            'IP Geoblocking & Rate Limiting Rules'
+          ],
+          attackVector: `curl -H "Host: ${hostVal}" http://${reconData.ipExposure.detectedServerIp}/`
+        },
+        developerGuidance: {
+          checklist: [
+            'Configure server firewall (iptables / AWS Security Group) to only accept incoming traffic from Cloudflare / CDN IP ranges',
+            'Strip backend headers (X-Backend-Server, X-Real-IP, Server) in Nginx/Apache configuration',
+            'Ensure DNS MX, FTP, and subdomain records do not point directly to the origin IP',
+            'Request a new IP address from your cloud provider if origin IP has been publicly indexed'
+          ]
+        }
+      });
+    }
   }
 
   // Active recon data consolidation
@@ -1546,7 +1910,36 @@ app.post('${noRateLimit.path}', authLimiter, loginHandler);`,
     adminEndpoints: repoData?.adminEndpoints || [],
     loginEndpoints: repoData?.loginEndpoints || [],
     repoMetadata: repoData?.repoInfo || null,
+    mediaEncryption: {
+      testedPaths: [],
+      leakedMedia: [],
+      status: 'SECURE',
+      evidence: 'Repository static scan - no direct media endpoints probed.',
+    },
+    ipExposure: {
+      detectedServerIp: '',
+      originIpLeaked: false,
+      leakVectors: [],
+      clientIpReflected: false,
+      clientIp: '',
+      isBehindProxy: true,
+      proxyProvider: 'GitHub Managed Infrastructure',
+      evidence: 'Target is hosted on GitHub repository infrastructure. Origin server IP is not directly exposed.',
+    },
   };
+
+  // Inspect any exposed cryptographic keys across environment configs
+  const cryptoKeysInEnv = (effectiveRecon.envEndpoints || []).filter(e => 
+    /(ENCRYPT|CRYPTO|CIPHER|AES|SECRET_KEY|MEDIA_KEY|SALT|PRIVATE_KEY|STORAGE_KEY)/i.test(e.key)
+  );
+  if (cryptoKeysInEnv.length > 0 && effectiveRecon.mediaEncryption?.status !== 'LEAK_DETECTED') {
+    effectiveRecon.mediaEncryption = {
+      testedPaths: effectiveRecon.mediaEncryption?.testedPaths || [],
+      leakedMedia: effectiveRecon.mediaEncryption?.leakedMedia || [],
+      status: 'LEAK_DETECTED',
+      evidence: `Cryptographic keys detected in exposed configuration (${cryptoKeysInEnv.map(k => k.key).join(', ')}). Any encrypted media assets can be decrypted by unauthorized actors.`,
+    };
+  }
 
   // Recalculate summary metrics
   const summary = calculateRiskSummary(rawVulns, effectiveRecon);

@@ -31,7 +31,9 @@ import {
   Database,
   Bug,
   Layers,
-  ListChecks
+  ListChecks,
+  Server,
+  HardDrive
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
@@ -756,6 +758,164 @@ export default function StrixPentestPage() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Origin & IP Address Exposure Diagnostic */}
+                {scanResult.recon.ipExposure && (
+                  <div 
+                    className={styles.reconCard} 
+                    style={{ 
+                      gridColumn: '1 / -1',
+                      borderColor: scanResult.recon.ipExposure.originIpLeaked ? 'rgba(239, 68, 68, 0.45)' : 'rgba(52, 211, 153, 0.3)',
+                      background: scanResult.recon.ipExposure.originIpLeaked ? 'rgba(239, 68, 68, 0.04)' : 'rgba(15, 23, 42, 0.5)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: scanResult.recon.ipExposure.originIpLeaked ? '#f87171' : '#34d399', margin: 0 }}>
+                        <Server size={18} />
+                        Origin & Computer / Server IP Exposure Diagnostic
+                      </div>
+                      <div>
+                        {scanResult.recon.ipExposure.originIpLeaked ? (
+                          <span className={styles.reconTagDanger}>⚠️ ORIGIN IP EXPOSED (WAF BYPASS RISK)</span>
+                        ) : (
+                          <span className={styles.reconTagSuccess}>🛡️ SHIELDED BEHIND REVERSE PROXY</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Metric Bar */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Detected Server / Host IP</div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.95rem', color: scanResult.recon.ipExposure.originIpLeaked ? '#f87171' : '#38bdf8' }}>
+                          {scanResult.recon.ipExposure.detectedServerIp || 'Unresolved / Hidden'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Proxy / Edge Shielding</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#f1f5f9' }}>
+                          {scanResult.recon.ipExposure.proxyProvider || 'Direct Origin Server'}
+                        </div>
+                      </div>
+                      <div style={{ background: 'rgba(2, 6, 23, 0.6)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Network Defense Posture</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: scanResult.recon.ipExposure.isBehindProxy ? '#34d399' : '#f59e0b' }}>
+                          {scanResult.recon.ipExposure.isBehindProxy ? 'Protected by CDN/WAF' : 'Direct Public Internet Access'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Valid Technical Evidence */}
+                    {scanResult.recon.ipExposure.evidence && (
+                      <div style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                          Valid Technical Evidence & Network Analysis:
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: scanResult.recon.ipExposure.originIpLeaked ? '#fca5a5' : '#cbd5e1', lineHeight: 1.5 }}>
+                          {scanResult.recon.ipExposure.evidence}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Disclosed IP Leak Vectors list */}
+                    {scanResult.recon.ipExposure.leakVectors?.length > 0 && (
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#f87171', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>
+                          Discovered IP Exposure Vectors ({scanResult.recon.ipExposure.leakVectors.length}):
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {scanResult.recon.ipExposure.leakVectors.map((vec, vIdx) => (
+                            <div key={vIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', padding: '6px 12px', fontSize: '0.8rem', color: '#fca5a5', fontFamily: 'monospace' }}>
+                              <span>🚨</span>
+                              <span>{vec}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Encrypted Media & Storage Audit */}
+                {scanResult.recon.mediaEncryption && (
+                  <div 
+                    className={styles.reconCard} 
+                    style={{ 
+                      gridColumn: '1 / -1',
+                      borderColor: scanResult.recon.mediaEncryption.status === 'LEAK_DETECTED' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(52, 211, 153, 0.3)',
+                      background: scanResult.recon.mediaEncryption.status === 'LEAK_DETECTED' ? 'rgba(239, 68, 68, 0.04)' : 'rgba(15, 23, 42, 0.5)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: scanResult.recon.mediaEncryption.status === 'LEAK_DETECTED' ? '#f87171' : '#34d399', margin: 0 }}>
+                        <HardDrive size={18} />
+                        Encrypted Media & Storage Security Audit
+                      </div>
+                      <div>
+                        {scanResult.recon.mediaEncryption.status === 'LEAK_DETECTED' ? (
+                          <span className={styles.reconTagDanger}>⚡ ENCRYPTION LEAK DETECTED</span>
+                        ) : (
+                          <span className={styles.reconTagSuccess}>🔒 MEDIA STORAGE RESTRICTED / SECURE</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Valid Cryptographic Proof & Evidence */}
+                    {scanResult.recon.mediaEncryption.evidence && (
+                      <div style={{ background: 'rgba(2, 6, 23, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px' }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8', marginBottom: '4px' }}>
+                          Cryptographic Audit Proof & Findings:
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: scanResult.recon.mediaEncryption.status === 'LEAK_DETECTED' ? '#fca5a5' : '#cbd5e1', lineHeight: 1.5 }}>
+                          {scanResult.recon.mediaEncryption.evidence}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tested Media Paths */}
+                    {scanResult.recon.mediaEncryption.testedPaths?.length > 0 && (
+                      <div style={{ marginBottom: '10px' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                          Tested Media & Storage Endpoints ({scanResult.recon.mediaEncryption.testedPaths.length}):
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {scanResult.recon.mediaEncryption.testedPaths.map((p, pIdx) => {
+                            const isLeaked = scanResult.recon.mediaEncryption.leakedMedia?.some(m => m.path === p);
+                            return (
+                              <span 
+                                key={pIdx} 
+                                className={isLeaked ? styles.reconTagDanger : styles.reconTag}
+                                style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}
+                              >
+                                {p} {isLeaked ? '• EXPOSED' : '• Protected'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Leaked Media Details */}
+                    {scanResult.recon.mediaEncryption.leakedMedia?.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#f87171', fontWeight: 600, textTransform: 'uppercase' }}>
+                          Compromised Media Buckets & Disclosures ({scanResult.recon.mediaEncryption.leakedMedia.length}):
+                        </div>
+                        {scanResult.recon.mediaEncryption.leakedMedia.map((m, mIdx) => (
+                          <div key={mIdx} style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#f87171' }}>{m.path} (HTTP {m.status})</span>
+                              <span className={styles.reconTagDanger}>{m.issue}</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#fca5a5' }}>
+                              <strong>Evidence:</strong> {m.evidence}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

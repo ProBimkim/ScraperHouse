@@ -135,6 +135,27 @@ const SecurityScanResultSchema = new mongoose.Schema({
       interceptedRequest: { type: String, default: '' },
       sampleResponseSnippet: { type: String, default: '' },
     }],
+    mediaEncryption: {
+      testedPaths: [{ type: String }],
+      leakedMedia: [{
+        path: { type: String },
+        status: { type: Number, default: 0 },
+        issue: { type: String, default: '' },
+        evidence: { type: String, default: '' },
+      }],
+      status: { type: String, default: 'SECURE' }, // 'LEAK_DETECTED' | 'WEAK_CIPHER' | 'SECURE' | 'NO_MEDIA_FOUND'
+      evidence: { type: String, default: '' },
+    },
+    ipExposure: {
+      detectedServerIp: { type: String, default: '' },
+      originIpLeaked: { type: Boolean, default: false },
+      leakVectors: [{ type: String }],
+      clientIpReflected: { type: Boolean, default: false },
+      clientIp: { type: String, default: '' },
+      isBehindProxy: { type: Boolean, default: false },
+      proxyProvider: { type: String, default: 'Direct Origin' },
+      evidence: { type: String, default: '' },
+    },
     repoMetadata: { type: mongoose.Schema.Types.Mixed, default: null },
   },
 
