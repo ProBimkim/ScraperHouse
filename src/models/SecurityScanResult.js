@@ -88,6 +88,26 @@ const SecurityScanResultSchema = new mongoose.Schema({
     missingSecurityHeaders: [{ type: String }],
     probedEndpoints: [ProbedEndpointSchema],
     exposedRisks: [{ type: String }],
+    envEndpoints: [{
+      key: { type: String },
+      value: { type: String },
+      type: { type: String, default: 'ENDPOINT' },
+      isSecret: { type: Boolean, default: false },
+      source: { type: String, default: '.env' },
+    }],
+    adminEndpoints: [{
+      path: { type: String },
+      status: { type: Number, default: 0 },
+      accessible: { type: Boolean, default: false },
+      note: { type: String, default: '' },
+    }],
+    loginEndpoints: [{
+      path: { type: String },
+      status: { type: Number, default: 0 },
+      accessible: { type: Boolean, default: false },
+      method: { type: String, default: 'POST' },
+      note: { type: String, default: '' },
+    }],
     repoMetadata: { type: mongoose.Schema.Types.Mixed, default: null },
   },
 

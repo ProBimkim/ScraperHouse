@@ -17,7 +17,10 @@ import {
   ExternalLink,
   Printer,
   Search,
-  Loader2
+  Loader2,
+  Key,
+  Lock,
+  Shield
 } from 'lucide-react';
 
 export default function StrixDetailPage({ params }) {
@@ -171,6 +174,91 @@ export default function StrixDetailPage({ params }) {
                     Executive Security Briefing
                   </div>
                   <p>{scanResult.executiveSummary}</p>
+                </div>
+              )}
+
+              {/* Reconnaissance & Attack Surface Card */}
+              {scanResult.recon && (
+                <div className={styles.reconGrid}>
+                  {/* Extracted .env Endpoints */}
+                  {scanResult.recon.envEndpoints?.length > 0 && (
+                    <div className={styles.reconCard} style={{ gridColumn: '1 / -1', borderColor: 'rgba(245, 158, 11, 0.35)' }}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24' }}>
+                        <Key size={16} />
+                        Extracted .env Endpoints & Configurations ({scanResult.recon.envEndpoints.length})
+                      </div>
+                      <div className={styles.envListTable}>
+                        {scanResult.recon.envEndpoints.map((item, idx) => (
+                          <div key={idx} className={styles.envRow}>
+                            <span className={styles.envKey}>{item.key}</span>
+                            <span className={styles.envVal}>{item.value}</span>
+                            <span className={item.isSecret ? styles.envBadge : styles.reconTagInfo}>
+                              {item.isSecret ? 'SECRET' : item.type}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Discovered Admin Endpoints */}
+                  {scanResult.recon.adminEndpoints?.length > 0 && (
+                    <div className={styles.reconCard} style={{ borderColor: scanResult.recon.adminEndpoints.some(a => a.accessible) ? 'rgba(239, 68, 68, 0.4)' : 'rgba(59, 130, 246, 0.25)' }}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171' }}>
+                        <Lock size={16} />
+                        Discovered Admin Interfaces (/admin) ({scanResult.recon.adminEndpoints.length})
+                      </div>
+                      <div className={styles.reconTagList}>
+                        {scanResult.recon.adminEndpoints.map((adm, i) => (
+                          <span
+                            key={i}
+                            className={adm.accessible ? styles.reconTagDanger : styles.reconTag}
+                          >
+                            {adm.path} {adm.status ? `(HTTP ${adm.status})` : ''} - {adm.accessible ? 'EXPOSED' : 'Protected'}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Discovered Login Endpoints */}
+                  {scanResult.recon.loginEndpoints?.length > 0 && (
+                    <div className={styles.reconCard}>
+                      <div className={styles.reconCardTitle} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60a5fa' }}>
+                        <Shield size={16} />
+                        Discovered Authentication / Login Endpoints ({scanResult.recon.loginEndpoints.length})
+                      </div>
+                      <div className={styles.reconTagList}>
+                        {scanResult.recon.loginEndpoints.map((log, i) => (
+                          <span key={i} className={styles.reconTagInfo}>
+                            [{log.method || 'POST'}] {log.path} {log.status ? `(HTTP ${log.status})` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {scanResult.recon.technologies?.length > 0 && (
+                    <div className={styles.reconCard}>
+                      <div className={styles.reconCardTitle}>Identified Technologies</div>
+                      <div className={styles.reconTagList}>
+                        {scanResult.recon.technologies.map((t, i) => (
+                          <span key={i} className={styles.reconTag}>{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {scanResult.recon.missingSecurityHeaders?.length > 0 && (
+                    <div className={styles.reconCard}>
+                      <div className={styles.reconCardTitle}>Missing Defensive Headers</div>
+                      <div className={styles.reconTagList}>
+                        {scanResult.recon.missingSecurityHeaders.map((h, i) => (
+                          <span key={i} className={`${styles.reconTag} ${styles.reconTagWarning}`}>{h}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
