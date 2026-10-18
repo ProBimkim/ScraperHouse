@@ -153,26 +153,32 @@ export default function DeleteConfirmModal({
           )}
         </div>
 
-        {/* Password Verification Note */}
-        <div className="confirm-warning-note">
-          <p style={{ marginBottom: '8px' }}>
-            {isSherlock
-              ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
-              : isStrix
-              ? '⚠️ Seluruh data hasil audit keamanan, analisis kerentanan, dan eksploit PoC target ini akan dihapus permanen dari sistem.'
-              : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
-          </p>
-          <p>Masukkan password aplikasi untuk melanjutkan:</p>
-          <input 
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="APP_PASSWORD"
-            className="search-input"
-            style={{ marginTop: '10px', width: '100%' }}
-            disabled={isDeleting}
-          />
-        </div>
+        {/* Warning & Verification Note */}
+        {isStrix ? (
+          <div className="confirm-warning-note" style={{ borderColor: 'rgba(239, 68, 68, 0.35)', background: 'rgba(239, 68, 68, 0.08)' }}>
+            <p style={{ margin: 0, color: '#fca5a5', fontSize: '0.85rem' }}>
+              ⚠️ Seluruh laporan analisis kerentanan, data diagnostik, dan detail temuan audit untuk target ini akan dihapus secara permanen.
+            </p>
+          </div>
+        ) : (
+          <div className="confirm-warning-note">
+            <p style={{ marginBottom: '8px' }}>
+              {isSherlock
+                ? '⚠️ Seluruh data hasil pencarian username ini akan dihapus permanen dari sistem.'
+                : '⚠️ Seluruh data pertanyaan, pilihan jawaban, dan file media terkait hasil scraping ini akan dihapus permanen dari sistem.'}
+            </p>
+            <p>Masukkan password aplikasi untuk melanjutkan:</p>
+            <input 
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="APP_PASSWORD"
+              className="search-input"
+              style={{ marginTop: '10px', width: '100%' }}
+              disabled={isDeleting}
+            />
+          </div>
+        )}
 
         {/* Liquid Capsule Buttons */}
         <div className="confirm-actions">
@@ -191,8 +197,8 @@ export default function DeleteConfirmModal({
           <button
             type="button"
             className="btn-liquid-delete"
-            onClick={() => onConfirm(password)}
-            disabled={isDeleting || !password}
+            onClick={() => onConfirm(isStrix ? '' : password)}
+            disabled={isDeleting || (!isStrix && !password)}
           >
             <Trash2 size={16} />
             {isDeleting ? 'Menghapus...' : 'Konfirmasi Hapus'}

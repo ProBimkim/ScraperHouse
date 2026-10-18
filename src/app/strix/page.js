@@ -27,7 +27,11 @@ import {
   Key,
   Lock,
   Shield,
-  Trash2
+  Trash2,
+  Database,
+  Bug,
+  Layers,
+  ListChecks
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 
@@ -719,6 +723,36 @@ export default function StrixPentestPage() {
                               {log.note}
                             </div>
                           )}
+
+                          {log.bypassEvidence && (
+                            <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.8rem', color: '#fca5a5' }}>
+                              <strong>⚡ Bypass Analysis & Proof:</strong> {log.bypassEvidence}
+                            </div>
+                          )}
+
+                          {log.sqlErrorEvidence && (
+                            <div style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', fontSize: '0.8rem', color: '#fbbf24' }}>
+                              <strong>⚠️ Database Syntax Error Signature:</strong> {log.sqlErrorEvidence}
+                            </div>
+                          )}
+
+                          {(log.interceptedRequest || log.sampleResponseSnippet) && (
+                            <details style={{ marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              <summary style={{ cursor: 'pointer', color: '#60a5fa' }}>Inspect Intercepted Wire Request & Response Payload</summary>
+                              {log.interceptedRequest && (
+                                <div className={styles.inspectDetailsBox}>
+                                  <div style={{ color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>Intercepted Request:</div>
+                                  <pre style={{ margin: 0, color: '#38bdf8' }}>{log.interceptedRequest}</pre>
+                                </div>
+                              )}
+                              {log.sampleResponseSnippet && (
+                                <div className={styles.inspectDetailsBox}>
+                                  <div style={{ color: '#94a3b8', marginBottom: '4px', fontWeight: 600 }}>Server Response Snippet:</div>
+                                  <pre style={{ margin: 0, color: log.fuzzResult === 'BYPASS_DETECTED' ? '#f87171' : '#f59e0b' }}>{log.sampleResponseSnippet}</pre>
+                                </div>
+                              )}
+                            </details>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -918,6 +952,113 @@ export default function StrixPentestPage() {
                             </div>
                           )}
 
+                          {/* Data Leakage & Exposed Information Card */}
+                          {vuln.dataLeakage && (
+                            <div className={styles.leakageCard}>
+                              <div className={styles.leakageCardTitle}>
+                                <Database size={16} />
+                                Informasi & Data Yang Dapat Bocor (Exposed Data Analysis)
+                              </div>
+                              {vuln.dataLeakage.impactDescription && (
+                                <p style={{ fontSize: '0.85rem', color: '#fca5a5', marginBottom: '8px' }}>
+                                  {vuln.dataLeakage.impactDescription}
+                                </p>
+                              )}
+
+                              {vuln.dataLeakage.leakedTypes?.length > 0 && (
+                                <div className={styles.leakedTypesList}>
+                                  {vuln.dataLeakage.leakedTypes.map((type, tIdx) => (
+                                    <span key={tIdx} className={styles.leakedTypeBadge}>
+                                      <AlertTriangle size={12} /> {type}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {vuln.dataLeakage.exposedSample && (
+                                <div style={{ marginTop: '10px' }}>
+                                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f87171', marginBottom: '4px' }}>
+                                    Simulasi / Contoh Struktur Data Bocor (Leaked Data Content):
+                                  </div>
+                                  <div className={styles.codeBlock} style={{ borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                                    <button
+                                      type="button"
+                                      className={styles.copyCodeBtn}
+                                      onClick={() => handleCopy(vuln.dataLeakage.exposedSample, `leak_${vulnKey}`)}
+                                    >
+                                      {copiedId === `leak_${vulnKey}` ? <Check size={14} /> : <Copy size={14} />}
+                                      {copiedId === `leak_${vulnKey}` ? 'Copied!' : 'Copy Data'}
+                                    </button>
+                                    <pre style={{ color: '#fca5a5' }}>{vuln.dataLeakage.exposedSample}</pre>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Developer Debugging & Bypass Trace */}
+                          {(vuln.debuggingInfo || vuln.bypassDetails) && (
+                            <div className={styles.debugCard}>
+                              <div className={styles.debugCardTitle}>
+                                <Bug size={16} />
+                                Developer Debugging & Bypass Mechanics Trace
+                              </div>
+
+                              {vuln.debuggingInfo?.rootCauseTrigger && (
+                                <div style={{ marginBottom: '10px', fontSize: '0.85rem' }}>
+                                  <strong style={{ color: '#38bdf8' }}>Root Cause Parameter / Trigger: </strong>
+                                  <code style={{ color: '#fbbf24', background: 'rgba(0,0,0,0.4)', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {vuln.debuggingInfo.rootCauseTrigger}
+                                  </code>
+                                </div>
+                              )}
+
+                              {vuln.bypassDetails?.mechanism && (
+                                <div style={{ marginBottom: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                  <strong style={{ color: '#38bdf8' }}>Bypass Mechanism: </strong>
+                                  {vuln.bypassDetails.mechanism}
+                                </div>
+                              )}
+
+                              {vuln.bypassDetails?.bypassedControls?.length > 0 && (
+                                <div style={{ marginBottom: '10px' }}>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                    Bypassed Defense Layers:
+                                  </div>
+                                  <div className={styles.bypassedPills}>
+                                    {vuln.bypassDetails.bypassedControls.map((ctrl, cIdx) => (
+                                      <span key={cIdx} className={styles.bypassedPill}>
+                                        <Layers size={12} /> {ctrl}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {vuln.debuggingInfo?.executionFlow?.length > 0 && (
+                                <div style={{ marginTop: '12px' }}>
+                                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#38bdf8', marginBottom: '6px' }}>
+                                    Execution Flow Timeline (Call Stack Analysis):
+                                  </div>
+                                  <div className={styles.executionTimeline}>
+                                    {vuln.debuggingInfo.executionFlow.map((step, sIdx) => (
+                                      <div key={sIdx} className={styles.executionStep}>
+                                        {step}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {vuln.debuggingInfo?.serverErrorSignature && (
+                                <div style={{ marginTop: '10px', fontSize: '0.8rem' }}>
+                                  <span style={{ color: '#f59e0b', fontWeight: 600 }}>Observed Server / Error Signature: </span>
+                                  <code style={{ color: '#fca5a5' }}>{vuln.debuggingInfo.serverErrorSignature}</code>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {/* Remediation & Code Patch */}
                           {(vuln.remediation || vuln.remediationPatch) && (
                             <div className={styles.vulnSection}>
@@ -926,6 +1067,21 @@ export default function StrixPentestPage() {
                                 <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
                                   {vuln.remediation}
                                 </p>
+                              )}
+                              {vuln.developerGuidance?.checklist?.length > 0 && (
+                                <div style={{ marginTop: '10px', marginBottom: '12px' }}>
+                                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#34d399', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <ListChecks size={14} /> Developer Fix Checklist:
+                                  </div>
+                                  <div className={styles.developerChecklist}>
+                                    {vuln.developerGuidance.checklist.map((item, chIdx) => (
+                                      <div key={chIdx} className={styles.checklistItem}>
+                                        <Check size={14} />
+                                        <span>{item}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               )}
                               {vuln.remediationPatch && (
                                 <div className={styles.codeBlock} style={{ borderColor: 'rgba(52, 211, 153, 0.3)' }}>

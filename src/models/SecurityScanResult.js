@@ -35,6 +35,25 @@ const VulnerabilityItemSchema = new mongoose.Schema({
   remediation: { type: String, default: '' },
   remediationPatch: { type: String, default: '' },
   references: [{ type: String }],
+  // Rich Developer Debugging, Bypass, and Data Leakage Analysis
+  dataLeakage: {
+    leakedTypes: [{ type: String }],
+    exposedSample: { type: String, default: '' },
+    impactDescription: { type: String, default: '' },
+  },
+  debuggingInfo: {
+    rootCauseTrigger: { type: String, default: '' },
+    executionFlow: [{ type: String }],
+    serverErrorSignature: { type: String, default: '' },
+  },
+  bypassDetails: {
+    mechanism: { type: String, default: '' },
+    bypassedControls: [{ type: String }],
+    attackVector: { type: String, default: '' },
+  },
+  developerGuidance: {
+    checklist: [{ type: String }],
+  },
 }, { _id: false });
 
 const ProbedEndpointSchema = new mongoose.Schema({
@@ -111,6 +130,10 @@ const SecurityScanResultSchema = new mongoose.Schema({
       hasCsrf: { type: Boolean, default: false },
       rateLimitDetected: { type: Boolean, default: false },
       fuzzResult: { type: String, default: 'SECURE' },
+      bypassEvidence: { type: String, default: '' },
+      sqlErrorEvidence: { type: String, default: '' },
+      interceptedRequest: { type: String, default: '' },
+      sampleResponseSnippet: { type: String, default: '' },
     }],
     repoMetadata: { type: mongoose.Schema.Types.Mixed, default: null },
   },

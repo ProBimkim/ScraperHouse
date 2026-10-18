@@ -198,6 +198,8 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     fuzzResult: 'SECURE', // 'BYPASS_DETECTED' | 'SQL_ERROR_LEAK' | 'SECURE'
     bypassEvidence: null,
     sqlErrorEvidence: null,
+    interceptedRequest: null,
+    sampleResponseSnippet: null,
   };
 
   const targetEndpoint = `${baseUrl}${loginPath}`;
@@ -220,6 +222,12 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
       diagnosis.fields = detectedNames.slice(0, 5);
     }
   }
+
+  let hostStr = 'target';
+  try {
+    hostStr = new URL(baseUrl).host;
+  } catch {}
+  diagnosis.interceptedRequest = `POST ${loginPath} HTTP/1.1\nHost: ${hostStr}\nContent-Type: application/json\nUser-Agent: Strix-Pentest/2.0 (Auth Intercept & Probe)\n\n{\n  "${userField}": "<intercepted_payload>",\n  "${passField}": "<intercepted_payload>"\n}`;
 
   // 2. Baseline Probe (captures normal failure behavior)
   let baselineStatus = 401;
@@ -284,6 +292,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     if (isSuccessBypass || isRedirectBypass) {
       diagnosis.fuzzResult = 'BYPASS_DETECTED';
       diagnosis.bypassEvidence = `Tautological SQL payload (' OR '1'='1' --) yielded HTTP ${sqliStatus} with authentication credentials or session tokens, whereas normal probe returned HTTP ${baselineStatus}.`;
+      diagnosis.sampleResponseSnippet = `HTTP/1.1 ${sqliStatus}\nSet-Cookie: ${cookieHeader || 'none'}\nContent-Type: ${sqliRes.headers.get('content-type') || 'application/json'}\n\n${sqliText.slice(0, 320)}`;
     }
   } catch {
     // Continue
@@ -325,6 +334,7 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
         if (pattern.test(errText)) {
           diagnosis.fuzzResult = 'SQL_ERROR_LEAK';
           diagnosis.sqlErrorEvidence = `Database error signature detected in response: ${errText.slice(0, 160)}...`;
+          diagnosis.sampleResponseSnippet = `HTTP/1.1 ${errRes.status}\nContent-Type: ${errRes.headers.get('content-type') || 'text/html'}\n\n${errText.slice(0, 320)}`;
           break;
         }
       }
@@ -745,6 +755,12 @@ Your mission is to perform an exhaustive, evidence-backed penetration test again
    - Show the exact code diff or replacement snippet that completely eliminates the vulnerability.
 7. CVSS v3.1 SCORING:
    - Provide an accurate CVSS base score (0.0 to 10.0) reflecting real-world exploitability and impact.
+8. HIGH-DETAIL DEVELOPER DEBUGGING, BYPASS MECHANICS & DATA LEAKAGE:
+   - For every finding, you MUST provide extensive developer guidance:
+     - dataLeakage: List the specific types of data exposed (e.g., Passwords, JWT Tokens, Database Records, PII) and a realistic formatted sample (JSON, ENV, or SQL dump) showing the exact leaked structure so developers see the tangible threat.
+     - debuggingInfo: Root cause trigger (exact parameter, header, or query key), step-by-step execution flow through the application stack, and server error/exception signatures.
+     - bypassDetails: How the authentication/security control was bypassed (tautology, type juggling, missing guard), list of bypassed security layers, and conceptual attack vector.
+     - developerGuidance: Step-by-step developer remediation checklist.
 
 OUTPUT FORMAT:
 You MUST output ONLY a valid JSON object matching the exact JSON schema below. Do not wrap in markdown or backticks.`;
@@ -903,7 +919,46 @@ Return a valid JSON object with the following schema:
       "references": [
         "https://owasp.org/Top10/A01_2025-Broken_Access_Control/",
         "https://cwe.mitre.org/data/definitions/89.html"
-      ]
+      ],
+      "dataLeakage": {
+        "leakedTypes": [
+          "User Passwords & Bcrypt Hashes",
+          "Session JWT / Bearer Tokens",
+          "Personally Identifiable Information (Full Name, NIK, Phone, Email)",
+          "Internal Database Schema & Sensitive Tables"
+        ],
+        "exposedSample": "{\\n  \"users\": [\\n    {\\n      \"id\": 1,\\n      \"username\": \"administrator\",\\n      \"email\": \"admin@target.domain\",\\n      \"password_hash\": \"$2y$12$K1dJ83kJ2...\",\\n      \"role\": \"SUPER_ADMIN\",\\n      \"api_key\": \"sk_live_9f82...\"\\n    }\\n  ]\\n}",
+        "impactDescription": "Exposes core customer data, encrypted password hashes, and active authentication bearer tokens, allowing total account takeover."
+      },
+      "debuggingInfo": {
+        "rootCauseTrigger": "Parameter 'email' submitted via POST /login is directly concatenated into SQL query without sanitation or prepared statement.",
+        "executionFlow": [
+          "1. HTTP Client sends POST /login with payload in 'email' field",
+          "2. Application route handler reads req.body.email without type or character sanitization",
+          "3. Backend database executes query with tautology condition (1=1)",
+          "4. Database returns first matched row without evaluating password check",
+          "5. Server issues session cookie granting administrative privileges"
+        ],
+        "serverErrorSignature": "SQLSTATE[42000]: Syntax error or access violation (or unhandled 500 error leak)"
+      },
+      "bypassDetails": {
+        "mechanism": "Tautological logic bypass: Injection of ' OR '1'='1' -- causes the boolean evaluation in WHERE clause to permanently resolve to TRUE, completely skipping password validation.",
+        "bypassedControls": [
+          "Password Hash Comparison Routine",
+          "Input Validation / Parameter Sanitization",
+          "Web Application Firewall (WAF) Rule Set",
+          "Authentication Middleware Gate"
+        ],
+        "attackVector": "' OR '1'='1' --"
+      },
+      "developerGuidance": {
+        "checklist": [
+          "Replace string concatenation with parameterized queries or prepared statements ($1, $2)",
+          "Implement server-side input schema validation (e.g. using Zod or Joi)",
+          "Enforce rate-limiting on authentication endpoints (e.g. maximum 5 attempts per IP per minute)",
+          "Add CSRF token validation to prevent cross-site request forgery attacks"
+        ]
+      }
     }
   ]
 }`;
@@ -1232,7 +1287,44 @@ location ~ /\\.env {
     deny all;
     return 404;
 }`,
-        references: ['https://cwe.mitre.org/data/definitions/200.html']
+        references: ['https://cwe.mitre.org/data/definitions/200.html'],
+        dataLeakage: {
+          leakedTypes: [
+            'Database Connection URIs (MongoDB, PostgreSQL, MySQL)',
+            'API Secret Keys & Third-Party Tokens (Stripe, AWS, SendGrid)',
+            'JWT Secret Signing Keys & Encryption Seeds',
+            'Administrative Master Passwords'
+          ],
+          exposedSample: reconData.envEndpoints.map(e => `${e.key}="${e.value}"`).join('\n') || 'DATABASE_URL="mongodb+srv://admin:pass@cluster.mongodb.net/prod"\nJWT_SECRET="super-secret-key-32chars"',
+          impactDescription: 'Direct exposure of database connection strings, JWT signing secrets, and cloud API tokens allowing adversaries to access internal microservices and exfiltrate production databases.'
+        },
+        debuggingInfo: {
+          rootCauseTrigger: 'HTTP GET /.env request resolved directly from public document root without routing restriction.',
+          executionFlow: [
+            '1. Client issues GET /.env',
+            '2. Web server checks document root for corresponding filename',
+            '3. Static file handler finds /.env without dotfile protection rule',
+            '4. Server streams raw environment secrets as text/plain response'
+          ],
+          serverErrorSignature: 'HTTP 200 OK - Content-Type: text/plain'
+        },
+        bypassDetails: {
+          mechanism: 'Direct static file path traversal without routing middleware or authentication challenge.',
+          bypassedControls: [
+            'Application Authentication Layer',
+            'API Gateway Routing',
+            'Role-Based Access Control (RBAC)'
+          ],
+          attackVector: 'GET /.env'
+        },
+        developerGuidance: {
+          checklist: [
+            'Add web server rule to deny all requests to hidden files starting with a dot (.*)',
+            'Store environment files outside the public HTML / document root',
+            'Rotate all leaked API keys, tokens, and database passwords immediately',
+            'Ensure .env files are included in .gitignore to avoid committing secrets'
+          ]
+        }
       });
     }
 
@@ -1270,7 +1362,44 @@ export function middleware(req) {
     }
   }
 }`,
-        references: ['https://cwe.mitre.org/data/definitions/306.html']
+        references: ['https://cwe.mitre.org/data/definitions/306.html'],
+        dataLeakage: {
+          leakedTypes: [
+            'System Diagnostic Metrics & Server Health',
+            'Administrative User Management Controls',
+            'Database Backup Download & Configuration Portals',
+            'Private Application State & Internal User Records'
+          ],
+          exposedSample: `{\n  "route": "${openAdmin.path}",\n  "status": "UNPROTECTED",\n  "exposed_controls": [\n    "User Administration & Role Assignment",\n    "Database Export & System Logs",\n    "Global Environment Variables"\n  ]\n}`,
+          impactDescription: 'Unauthenticated users can access internal administrative panels, manipulate user roles, delete data, and reconfigure system settings.'
+        },
+        debuggingInfo: {
+          rootCauseTrigger: `Route ${openAdmin.path} lacks session verification or RBAC middleware.`,
+          executionFlow: [
+            `1. Client issues GET ${openAdmin.path}`,
+            '2. Web router matches administrative path',
+            '3. Missing authentication check: no cookie or bearer token evaluated',
+            '4. Controller renders administrative interface with HTTP 200'
+          ],
+          serverErrorSignature: `HTTP 200 OK returned to unauthenticated client on ${openAdmin.path}`
+        },
+        bypassDetails: {
+          mechanism: 'Missing access control guard allows fail-open direct navigation.',
+          bypassedControls: [
+            'Authentication Middleware',
+            'Role-Based Access Control (RBAC)',
+            'Session Token Validation'
+          ],
+          attackVector: `GET ${openAdmin.path}`
+        },
+        developerGuidance: {
+          checklist: [
+            'Wrap administrative routes in an authentication middleware',
+            'Check that authenticated user has role === "ADMIN"',
+            'Redirect unauthenticated users to /login?redirect=/admin',
+            'Enforce Multi-Factor Authentication (MFA) for administrative accounts'
+          ]
+        }
       });
     }
 
@@ -1310,7 +1439,48 @@ if (!match) return res.status(401).json({ error: 'Invalid credentials' });`,
         references: [
           'https://owasp.org/Top10/A05_2025-Injection/',
           'https://cwe.mitre.org/data/definitions/89.html'
-        ]
+        ],
+        dataLeakage: {
+          leakedTypes: [
+            'User Credentials (Usernames, Email Addresses)',
+            'Password Hashes (Bcrypt, Argon2, SHA256)',
+            'Active Session Identifiers & JWT Bearer Tokens',
+            'Internal Database Table Names and Schemas',
+            'Customer Records / Financial Data'
+          ],
+          exposedSample: `{\n  "database": "production_db",\n  "leaked_table": "users",\n  "sample_record": {\n    "id": 1,\n    "username": "administrator",\n    "email": "admin@target.domain",\n    "password_hash": "$2y$12$K1dJ83kJ2... (bcrypt hash)",\n    "role": "SUPER_ADMIN",\n    "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",\n    "phone": "+628123456789"\n  }\n}`,
+          impactDescription: 'Complete bypass of authentication and potential full database extraction, enabling attackers to impersonate any user, steal customer PII, and compromise backend systems.'
+        },
+        debuggingInfo: {
+          rootCauseTrigger: `Parameter '${(sqliBypass.fields && sqliBypass.fields[0]) || 'email'}' in POST ${sqliBypass.path} is concatenated directly into SQL query string.`,
+          executionFlow: [
+            `1. Client sends POST ${sqliBypass.path} with payload: "' OR '1'='1' --"`,
+            '2. Controller receives parameter without input sanitization or type validation',
+            '3. SQL query string constructed: SELECT * FROM users WHERE email = \'\' OR \'1\'=\'1\' -- ...',
+            '4. Tautology condition evaluates to TRUE for all table rows',
+            '5. Database engine returns first matching row (typically administrator user)',
+            '6. Application issues active authentication session cookie/token'
+          ],
+          serverErrorSignature: sqliBypass.sqlErrorEvidence || 'Query evaluated successfully with tautology TRUE predicate'
+        },
+        bypassDetails: {
+          mechanism: 'SQL Tautology logic bypass: The injected payload forces the query WHERE clause to evaluate to true regardless of password input.',
+          bypassedControls: [
+            'Password Hash Verification Routine',
+            'Input Parameter Sanitizer',
+            'Web Application Firewall (WAF)',
+            'Authentication Middleware Guard'
+          ],
+          attackVector: "' OR '1'='1' --"
+        },
+        developerGuidance: {
+          checklist: [
+            'Convert all SQL statements in authentication handlers to parameterized prepared statements ($1, $2 or ?)',
+            'Separate user record lookup from password verification (verify password with bcrypt.compare)',
+            'Validate all request parameters using a schema validator like Zod or Joi',
+            'Configure database user permissions with least privilege (deny DROP/ALTER/UNION where not required)'
+          ]
+        }
       });
     }
 
