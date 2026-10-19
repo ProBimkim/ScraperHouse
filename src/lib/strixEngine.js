@@ -2710,6 +2710,46 @@ print(f"Server Response: {response.text[:200]}")`
     finalExecutiveSummary += `\n\n[Analisis Dampak Beban & DoS (Stress Cooperation)]: ${vulnerabilityStressImpact.blastRadius.conclusions} Latensi asimetris maksimum: ${vulnerabilityStressImpact.blastRadius.maxLatencyInflation}.`;
   }
 
+  // Extract discovered administrative accounts and credentials across all vectors
+  const discoveredAdminCredentials = [
+    ...(accountTakeoverAssessment?.discoveredAdminCredentials || []),
+  ];
+
+  // Extract secrets from .env if discovered
+  if (effectiveRecon?.envEndpoints?.length > 0) {
+    for (const item of effectiveRecon.envEndpoints) {
+      if (item.isSecret || /(PASSWORD|PASSWD|SECRET|TOKEN|KEY|ADMIN|CREDENTIAL)/i.test(item.key)) {
+        discoveredAdminCredentials.push({
+          accountType: 'Environment Secret Variable',
+          targetAccount: item.key,
+          passwordCleartext: item.value,
+          passwordHash: '[Direct Secret Variable Exposure in .env]',
+          authEndpoint: '/.env',
+          discoveryMethod: 'Dotfile Information Leakage (CWE-200)',
+          compromiseSeverity: 'CRITICAL',
+          status: 'VERIFIED_EXPOSURE',
+          evidenceDetails: `Variabel kredensial lingkungan ${item.key} berhasil diekstrak langsung dari web server publik tanpa otentikasi.`,
+        });
+      }
+    }
+  }
+
+  // Check if unauthenticated admin portal was found
+  const accessibleAdmin = effectiveRecon?.adminEndpoints?.find(a => a.accessible);
+  if (accessibleAdmin) {
+    discoveredAdminCredentials.push({
+      accountType: 'Administrative Portal Access',
+      targetAccount: 'admin / unauthenticated',
+      passwordCleartext: '[No Password Required - Direct 200 OK Bypass]',
+      passwordHash: '[Bypass Autentikasi Total]',
+      authEndpoint: accessibleAdmin.path,
+      discoveryMethod: 'Broken Access Control (A01:2025)',
+      compromiseSeverity: 'CRITICAL',
+      status: 'VERIFIED_EXPOSURE',
+      evidenceDetails: `Portal administrasi ${accessibleAdmin.path} merespons HTTP ${accessibleAdmin.status} tanpa menantang kredensial login.`,
+    });
+  }
+
   const finalResult = {
     targetType,
     target,
@@ -2721,6 +2761,7 @@ print(f"Server Response: {response.text[:200]}")`
     vulnerabilities: rawVulns,
     vulnerabilityStressImpact,
     accountTakeoverAssessment,
+    discoveredAdminCredentials,
     sarif: null,
   };
 

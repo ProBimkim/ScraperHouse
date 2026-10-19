@@ -738,7 +738,7 @@ export default function StrixPentestPage() {
                 </div>
 
                 {stressEngineMode === 'chaos-k8s' ? (
-                  <ChaosMeshSuiteView initialUrl={targetInput || stressUrl || ''} />
+                  <ChaosMeshSuiteView initialUrl={targetInput || stressUrl || ''} scanResult={scanResult} />
                 ) : (
                   <>
                     <div className={styles.formGroup}>

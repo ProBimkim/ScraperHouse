@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import styles from './AccountTakeoverAssessmentCard.module.css';
 import {
   ShieldAlert,
@@ -14,11 +14,21 @@ import {
   Layers,
   Database,
   Lock,
-  ListFilter
+  ListFilter,
+  Copy,
+  Check
 } from 'lucide-react';
 
 export default function AccountTakeoverAssessmentCard({ assessment }) {
+  const [copiedKey, setCopiedKey] = useState(null);
+
   if (!assessment || !assessment.executed) return null;
+
+  const handleCopy = (text, key) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
   const overallRisk = assessment.overallAtoRisk || 'LOW';
   const badgeClass =
@@ -33,6 +43,7 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
   const respAnalysis = assessment.responseAnalysis || {};
   const remediationPlan = assessment.developerRemediationPlan || [];
   const monitored = profiling.monitoredEndpoints || [];
+  const credsList = assessment.discoveredAdminCredentials || [];
 
   return (
     <div className={styles.atoContainer}>
@@ -71,6 +82,85 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
           </span>
         </div>
       </div>
+
+      {/* Temuan Kredensial & Akun Admin Teridentifikasi (Tanpa Terpotong) */}
+      {credsList.length > 0 && (
+        <div className={styles.credsContainer}>
+          <div className={styles.credsHeader}>
+            <div className={styles.credsTitle}>
+              <KeyRound size={20} style={{ color: '#ef4444' }} />
+              Temuan Kredensial &amp; Akun Admin Teridentifikasi (Account Takeover Evidence)
+            </div>
+            <span className={styles.credsBadgeCritical}>
+              {credsList.length} Kredensial Admin Terpapar
+            </span>
+          </div>
+          <p className={styles.credsSubtitle}>
+            Hasil audit keamanan dan simulasi pengujian ketahanan autentikasi mengidentifikasi pasangan akun dan kata sandi administratif berikut secara lengkap tanpa sensor/pemotongan:
+          </p>
+          <div className={styles.tableWrapper}>
+            <table className={styles.credsTable}>
+              <thead>
+                <tr>
+                  <th>Tipe Akun</th>
+                  <th>Username / Akun Sasaran</th>
+                  <th>Password Teridentifikasi (Cleartext)</th>
+                  <th>Password Hash / Sample</th>
+                  <th>Endpoint Terkena Dampak</th>
+                  <th>Metode Temuan</th>
+                  <th>Status &amp; Bukti</th>
+                </tr>
+              </thead>
+              <tbody>
+                {credsList.map((cred, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontWeight: 700, color: '#fca5a5' }}>{cred.accountType}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <code className={styles.credCodeHighlight}>{cred.targetAccount}</code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(cred.targetAccount, `usr_${idx}`)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                          title="Copy username"
+                        >
+                          {copiedKey === `usr_${idx}` ? <Check size={14} style={{ color: '#34d399' }} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <code className={styles.credCodePassword}>{cred.passwordCleartext}</code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(cred.passwordCleartext, `pwd_${idx}`)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                          title="Copy password"
+                        >
+                          {copiedKey === `pwd_${idx}` ? <Check size={14} style={{ color: '#34d399' }} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <code className={styles.credCodeHash}>{cred.passwordHash}</code>
+                    </td>
+                    <td>
+                      <span className={styles.credEndpointTag}>{cred.authEndpoint}</span>
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{cred.discoveryMethod}</td>
+                    <td>
+                      <span className={styles.credStatusBadge}>{cred.status}</span>
+                      <div style={{ fontSize: '0.75rem', color: '#fca5a5', marginTop: '4px' }}>
+                        {cred.evidenceDetails}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Vektor Ancaman: Brute-Force vs. Credential Stuffing Table */}
       <div className={styles.sectionTitle}>

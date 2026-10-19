@@ -291,3 +291,130 @@
   color: var(--text-muted);
   line-height: 1.4;
 }
+
+/* Credentials Findings Container */
+.credsContainer {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.15);
+}
+
+.credsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.credsTitle {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.credsBadgeCritical {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.credsSubtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.credsTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.84rem;
+}
+
+.credsTable th {
+  background: rgba(30, 27, 75, 0.8);
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #fca5a5;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  white-space: nowrap;
+}
+
+.credsTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.credCodeHighlight {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  user-select: all;
+  display: inline-block;
+}
+
+.credCodePassword {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #fef08a;
+  background: rgba(245, 158, 11, 0.15);
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  user-select: all;
+  display: inline-block;
+}
+
+.credCodeHash {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  word-break: break-all;
+}
+
+.credEndpointTag {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.78rem;
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.credStatusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  color: #f87171;
+  font-size: 0.72rem;
+  font-weight: 800;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
