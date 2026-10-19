@@ -68,7 +68,7 @@ const SecurityScanResultSchema = new mongoose.Schema({
   slug: { type: String, required: true, unique: true, index: true },
   targetType: { 
     type: String, 
-    enum: ['url', 'repo', 'code'], 
+    enum: ['url', 'repo', 'code', 'stress'], 
     required: true 
   },
   target: { type: String, required: true },
@@ -171,6 +171,9 @@ const SecurityScanResultSchema = new mongoose.Schema({
 
   // Detailed findings
   vulnerabilities: [VulnerabilityItemSchema],
+
+  // Load / Stress testing output
+  stressResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
   // SARIF 2.1.0 output
   sarif: { type: mongoose.Schema.Types.Mixed, default: null },

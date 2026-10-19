@@ -35,17 +35,40 @@ import {
   Server,
   HardDrive,
   Cpu,
-  Camera
+  Camera,
+  Activity,
+  Zap,
+  Gauge,
+  StopCircle,
+  Clock,
+  TrendingUp,
+  BarChart2,
+  CheckCircle2,
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import StressReportView from '@/components/strix/StressReportView';
 
 
 export default function StrixPentestPage() {
   // Tabs & Target input
-  const [activeTab, setActiveTab] = useState('url'); // 'url' | 'repo' | 'code'
+  const [activeTab, setActiveTab] = useState('url'); // 'url' | 'repo' | 'code' | 'stress'
   const [targetInput, setTargetInput] = useState('');
   const [codeSnippet, setCodeSnippet] = useState('');
   
+  // Stress Testing state (configurable traffic volume without upper limit)
+  const [stressUrl, setStressUrl] = useState('');
+  const [stressVolume, setStressVolume] = useState('500'); // Unbounded, default 500
+  const [stressConcurrency, setStressConcurrency] = useState('20');
+  const [stressInterval, setStressInterval] = useState('50'); // Delay ms (simulasi kunjungan berkala)
+  const [stressMethod, setStressMethod] = useState('GET');
+  const [stressTimeout, setStressTimeout] = useState('10000');
+  const [stressUseProxy, setStressUseProxy] = useState(false);
+  const [stressRequestBody, setStressRequestBody] = useState('');
+  const [stressLiveTick, setStressLiveTick] = useState(null);
+  const [stressAbortController, setStressAbortController] = useState(null);
+
   // Advanced settings
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [scanMode, setScanMode] = useState('standard');
@@ -91,9 +114,12 @@ export default function StrixPentestPage() {
     }
   }, [scanLogs]);
 
-  // Handle starting a scan
+  // Handle starting a scan (Security Pentest or Server Stress Test)
   const handleStartScan = async (e) => {
     if (e) e.preventDefault();
+    if (activeTab === 'stress') {
+      return handleStartStressTest(e);
+    }
     setErrorMsg('');
 
     const targetVal = targetInput.trim();
@@ -195,6 +221,127 @@ export default function StrixPentestPage() {
     }
   };
 
+  // Handle server stress testing with streaming telemetry
+  const handleStartStressTest = async (e) => {
+    if (e) e.preventDefault();
+    setErrorMsg('');
+    const targetVal = (stressUrl || targetInput).trim();
+    if (!targetVal) {
+      setErrorMsg('Silakan masukkan URL target web/API yang valid untuk stress test.');
+      return;
+    }
+
+    const volumeNum = Math.max(parseInt(stressVolume, 10) || 100, 1);
+    const concurrencyNum = Math.min(Math.max(parseInt(stressConcurrency, 10) || 10, 1), 500);
+
+    const controller = new AbortController();
+    setStressAbortController(controller);
+    setIsScanning(true);
+    setScanProgress(0);
+    setStatusMessage(`Memulai Pengujian Beban: ${volumeNum.toLocaleString()} permintaan @ ${concurrencyNum} CCU...`);
+    setScanLogs([{ time: new Date().toLocaleTimeString(), text: `Menghubungkan ke ${targetVal} (${volumeNum.toLocaleString()} reqs @ ${concurrencyNum} pekerja paralel)...` }]);
+    setStressLiveTick(null);
+    setScanResult(null);
+
+    try {
+      const response = await fetch('/api/strix/stress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUrl: targetVal,
+          method: stressMethod,
+          totalRequests: volumeNum,
+          concurrency: concurrencyNum,
+          intervalMs: parseInt(stressInterval, 10) || 0,
+          timeoutMs: parseInt(stressTimeout, 10) || 10000,
+          useRotatingProxy: stressUseProxy,
+          requestBody: stressRequestBody,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Stress test gagal dengan status ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop();
+
+        for (const block of lines) {
+          if (!block.trim()) continue;
+          const eventMatch = block.match(/^event: (.*)$/m);
+          const dataMatch = block.match(/^data: (.*)$/m);
+
+          if (eventMatch && dataMatch) {
+            const eventType = eventMatch[1].trim();
+            let parsedData;
+            try {
+              parsedData = JSON.parse(dataMatch[1]);
+            } catch {
+              continue;
+            }
+
+            if (eventType === 'status') {
+              if (parsedData.percent !== undefined) setScanProgress(parsedData.percent);
+              setStressLiveTick(parsedData);
+              if (parsedData.message) {
+                setStatusMessage(parsedData.message);
+              } else if (parsedData.completed !== undefined) {
+                setStatusMessage(`Testing: ${parsedData.completed.toLocaleString()}/${parsedData.total.toLocaleString()} (${parsedData.percent}%) • Live ${parsedData.liveRps} req/s • Latensi ${parsedData.avgLatency}ms`);
+              }
+            } else if (eventType === 'complete') {
+              setScanProgress(100);
+              setStatusMessage('Stress test selesai dievaluasi!');
+              setScanResult({
+                targetType: 'stress',
+                target: targetVal,
+                targetLabel: `${targetVal} (${parsedData.completedTotal?.toLocaleString()} reqs @ ${concurrencyNum} CCU)`,
+                stressResult: parsedData,
+                executiveSummary: parsedData.analysis?.statusSummary,
+                summary: {
+                  riskScore: parsedData.analysis?.grade === 'F' ? 100 : parsedData.analysis?.grade === 'D' ? 85 : parsedData.analysis?.grade === 'C' ? 65 : parsedData.analysis?.grade === 'B' ? 35 : 10,
+                  riskRating: parsedData.analysis?.grade === 'F' ? 'CRITICAL' : parsedData.analysis?.grade === 'D' ? 'HIGH' : parsedData.analysis?.grade === 'C' ? 'MEDIUM' : parsedData.analysis?.grade === 'B' ? 'LOW' : 'SECURE',
+                }
+              });
+              setIsScanning(false);
+            } else if (eventType === 'error') {
+              throw new Error(parsedData.message || 'Terjadi kesalahan saat pengujian beban server.');
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setStatusMessage('Pengujian dihentikan secara manual oleh pengguna.');
+      } else {
+        console.error('Stress test error:', err);
+        setErrorMsg(err.message || 'Pengujian performa server gagal.');
+      }
+      setIsScanning(false);
+    } finally {
+      setStressAbortController(null);
+    }
+  };
+
+  const handleStopStressTest = () => {
+    if (stressAbortController) {
+      stressAbortController.abort();
+      setStressAbortController(null);
+      setStatusMessage('Menghentikan pengujian dan mengumpulkan telemetri...');
+      showToast('Pengujian dihentikan. Mengumpulkan hasil...', 'info');
+    }
+  };
+
   // Toggle vulnerability expansion
   const toggleVuln = (id) => {
     setExpandedVulns((prev) => ({
@@ -242,7 +389,11 @@ export default function StrixPentestPage() {
       const data = await res.json();
       setScanResult(data);
       setActiveTab(data.targetType || 'url');
-      setTargetInput(data.target || '');
+      if (data.targetType === 'stress') {
+        setStressUrl(data.target || '');
+      } else {
+        setTargetInput(data.target || '');
+      }
       const expandInit = {};
       (data.vulnerabilities || []).forEach((v, idx) => {
         if (v.severity === 'critical' || v.severity === 'high' || idx === 0) {
@@ -291,11 +442,15 @@ export default function StrixPentestPage() {
   // Export handlers
   const downloadJSON = () => {
     if (!scanResult) return;
-    const blob = new Blob([JSON.stringify(scanResult.vulnerabilities || [], null, 2)], { type: 'application/json' });
+    const content = scanResult.stressResult ? scanResult.stressResult : (scanResult.vulnerabilities || []);
+    const fileName = scanResult.stressResult 
+      ? `stress_report_${scanResult.slug || 'server'}.json`
+      : `vulnerabilities_${scanResult.slug || 'strix'}.json`;
+    const blob = new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vulnerabilities_${scanResult.slug || 'strix'}.json`;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -313,6 +468,51 @@ export default function StrixPentestPage() {
 
   const downloadMarkdownReport = () => {
     if (!scanResult) return;
+    if (scanResult.stressResult) {
+      const s = scanResult.stressResult;
+      let md = `# Laporan Pengujian Beban & Kapasitas Server (Stress Test) — Strix\n\n`;
+      md += `**Target:** ${s.target}\n`;
+      md += `**Stability Grade:** ${s.analysis?.grade || 'N/A'}\n`;
+      md += `**Evaluasi:** ${s.analysis?.stabilityStatus || 'Audit Selesai'}\n`;
+      md += `**Tanggal:** ${new Date().toISOString()}\n\n`;
+      md += `## Ringkasan Eksekutif\n\n${s.analysis?.statusSummary}\n\n`;
+      md += `## Metrik Kapasitas & Beban\n\n`;
+      md += `- **Total Request:** ${(s.completedTotal || 0).toLocaleString()}\n`;
+      md += `- **Concurrency (CCU):** ${s.concurrency} virtual users\n`;
+      md += `- **Durasi Pengujian:** ${s.durationSeconds} detik\n`;
+      md += `- **Throughput Rata-rata:** ${s.averageRps} req/s\n`;
+      md += `- **Batas Aman Maksimum (Safe RPS):** ${s.analysis?.safeCapacity?.safeRps || s.averageRps} req/s\n`;
+      md += `- **Batas Pengguna Bersamaan Aman (Safe CCU):** ${s.analysis?.safeCapacity?.safeCcu || s.concurrency} CCU\n\n`;
+      md += `## Latensi Respon (Percentiles)\n\n`;
+      md += `- **Min Latency:** ${s.latency?.min} ms\n`;
+      md += `- **Average Latency:** ${s.latency?.avg} ms\n`;
+      md += `- **Median (p50):** ${s.latency?.p50} ms\n`;
+      md += `- **90th Percentile (p90):** ${s.latency?.p90} ms\n`;
+      md += `- **95th Percentile (p95):** ${s.latency?.p95} ms\n`;
+      md += `- **99th Percentile (p99):** ${s.latency?.p99} ms\n`;
+      md += `- **Max Latency:** ${s.latency?.max} ms\n\n`;
+      if (s.analysis?.bottlenecks?.length) {
+        md += `## Titik Lemah / Bottlenecks Terdeteksi\n\n`;
+        s.analysis.bottlenecks.forEach(b => {
+          md += `### ${b.category}\n- **Detail:** ${b.detail}\n- **Dampak:** ${b.impact}\n\n`;
+        });
+      }
+      if (s.analysis?.recommendations?.length) {
+        md += `## Rekomendasi Solusi & Optimasi Developer\n\n`;
+        s.analysis.recommendations.forEach(r => {
+          md += `- **[${r.priority}] ${r.action}:** ${r.detail}\n`;
+        });
+      }
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stress_report_${scanResult.slug || 'server'}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     let md = `# Security Penetration Test Report — Strix AI\n\n`;
     md += `**Target:** ${scanResult.target}\n`;
     md += `**Target Type:** ${scanResult.targetType?.toUpperCase()}\n`;
@@ -415,10 +615,169 @@ export default function StrixPentestPage() {
               <Code size={18} />
               Source Code / Spec
             </button>
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${activeTab === 'stress' ? styles.tabBtnActive : ''}`}
+              onClick={() => setActiveTab('stress')}
+            >
+              <Activity size={18} />
+              Stress / Load Test (Unbounded)
+            </button>
           </div>
 
           <form onSubmit={handleStartScan}>
-            {activeTab !== 'code' ? (
+            {activeTab === 'stress' ? (
+              <div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>
+                    Target Server URL / Endpoint untuk Stress Test
+                  </label>
+                  <div className={styles.inputWrapper}>
+                    <Activity size={20} className={styles.inputIcon} />
+                    <input
+                      type="text"
+                      className={styles.textInput}
+                      placeholder="https://example.com/api/test atau https://staging.myapp.com"
+                      value={stressUrl}
+                      onChange={(e) => setStressUrl(e.target.value)}
+                      disabled={isScanning}
+                    />
+                  </div>
+                </div>
+
+                {/* Config Grid: Volume, Concurrency, Interval, Method, Timeout */}
+                <div className={styles.stressConfigGrid}>
+                  <div>
+                    <label className={styles.formLabel}>
+                      Volume Trafik Total (Jumlah Permintaan - Tanpa Batas Maksimum)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className={styles.textInput}
+                      style={{ paddingLeft: '14px', fontWeight: 600 }}
+                      placeholder="e.g. 500, 5000, 50000, 100000..."
+                      value={stressVolume}
+                      onChange={(e) => setStressVolume(e.target.value)}
+                      disabled={isScanning}
+                    />
+                    <div className={styles.presetRow}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preset Cepat:</span>
+                      {['200', '500', '1000', '5000', '10000', '25000', '50000', '100000'].map((vol) => (
+                        <button
+                          key={vol}
+                          type="button"
+                          className={`${styles.presetPill} ${stressVolume === vol ? styles.presetPillActive : ''}`}
+                          onClick={() => setStressVolume(vol)}
+                          disabled={isScanning}
+                        >
+                          {Number(vol) >= 1000 ? `${Number(vol) / 1000}k` : vol}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={styles.formLabel}>
+                      Concurrency (Virtual Users / CCU Bersamaan)
+                    </label>
+                    <select
+                      className={styles.selectInput}
+                      value={stressConcurrency}
+                      onChange={(e) => setStressConcurrency(e.target.value)}
+                      disabled={isScanning}
+                    >
+                      <option value="5">5 CCU (Ringan / Dev Local)</option>
+                      <option value="10">10 CCU (Beban Normal)</option>
+                      <option value="20">20 CCU (Menengah - Rekomendasi Awal)</option>
+                      <option value="50">50 CCU (Tinggi)</option>
+                      <option value="100">100 CCU (Sangat Tinggi)</option>
+                      <option value="200">200 CCU (Extreme Stress)</option>
+                      <option value="500">500 CCU (Ultra Peak)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={styles.formLabel}>
+                      Jeda Antar Request (Simulasi Kunjungan Pengguna Berkala)
+                    </label>
+                    <select
+                      className={styles.selectInput}
+                      value={stressInterval}
+                      onChange={(e) => setStressInterval(e.target.value)}
+                      disabled={isScanning}
+                    >
+                      <option value="0">0 ms (Full Flood / Maksimum Throughput Langsung)</option>
+                      <option value="25">25 ms (Kunjungan Cepat / Peak Traffic)</option>
+                      <option value="50">50 ms (Simulasi Pengguna Aktif Normal)</option>
+                      <option value="100">100 ms (Kunjungan Berkala Sedang)</option>
+                      <option value="250">250 ms (Simulasi Santai / Browsing Organik)</option>
+                      <option value="500">500 ms (Simulasi Kunjungan Ringan Berkala)</option>
+                      <option value="1000">1000 ms (1 Detik Sekali per Pengguna)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={styles.formLabel}>HTTP Method</label>
+                    <select
+                      className={styles.selectInput}
+                      value={stressMethod}
+                      onChange={(e) => setStressMethod(e.target.value)}
+                      disabled={isScanning}
+                    >
+                      <option value="GET">GET (Ambil Halaman / API Data)</option>
+                      <option value="POST">POST (Simulasi Kirim Form / Submit API)</option>
+                      <option value="HEAD">HEAD (Hanya Cek Header Server)</option>
+                      <option value="PUT">PUT (Update Resource)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className={styles.formLabel}>Timeout per Request (ms)</label>
+                    <select
+                      className={styles.selectInput}
+                      value={stressTimeout}
+                      onChange={(e) => setStressTimeout(e.target.value)}
+                      disabled={isScanning}
+                    >
+                      <option value="5000">5.000 ms (5 Detik - Respon Cepat)</option>
+                      <option value="10000">10.000 ms (10 Detik - Standar)</option>
+                      <option value="15000">15.000 ms (15 Detik)</option>
+                      <option value="30000">30.000 ms (30 Detik - Long Wait)</option>
+                    </select>
+                  </div>
+
+                  <div className={styles.proxyToggleBox}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                      <input
+                        type="checkbox"
+                        checked={stressUseProxy}
+                        onChange={(e) => setStressUseProxy(e.target.checked)}
+                        disabled={isScanning}
+                      />
+                      <span>Gunakan IP Rotating Proxy</span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Rotasi IP dari pool proxy publik agar simulasi berasal dari berbagai IP berbeda (mencegah blokir rate-limiter per-IP).
+                    </span>
+                  </div>
+                </div>
+
+                {(stressMethod === 'POST' || stressMethod === 'PUT') && (
+                  <div className={styles.formGroup} style={{ marginTop: '14px' }}>
+                    <label className={styles.formLabel}>Request Body (JSON / Raw Payload)</label>
+                    <textarea
+                      className={styles.codeTextarea}
+                      style={{ minHeight: '90px' }}
+                      placeholder='{"username": "stress_test_user", "action": "ping"}'
+                      value={stressRequestBody}
+                      onChange={(e) => setStressRequestBody(e.target.value)}
+                      disabled={isScanning}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : activeTab !== 'code' ? (
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>
                   {activeTab === 'url' ? 'Target URL or API Endpoint' : 'GitHub Repository URL'}
@@ -456,88 +815,91 @@ export default function StrixPentestPage() {
               </div>
             )}
 
-            {/* Advanced Settings Toggle */}
-            <button
-              type="button"
-              className={styles.settingsToggle}
-              onClick={() => setShowAdvanced(!showAdvanced)}
-            >
-              <Sliders size={16} />
-              {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options (Scope, Mode, API Keys)'}
-              {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
+            {/* Advanced Settings Toggle (Only for standard pentest) */}
+            {activeTab !== 'stress' && (
+              <>
+                <button
+                  type="button"
+                  className={styles.settingsToggle}
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <Sliders size={16} />
+                  {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options (Scope, Mode, API Keys)'}
+                  {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
 
-            {/* Advanced Box */}
-            {showAdvanced && (
-              <div className={styles.advancedBox}>
-                <div>
-                  <label className={styles.formLabel}>Scan Intensity Mode</label>
-                  <select
-                    className={styles.selectInput}
-                    value={scanMode}
-                    onChange={(e) => setScanMode(e.target.value)}
-                    disabled={isScanning}
-                  >
-                    <option value="quick">Quick Recon (Fast header & surface check)</option>
-                    <option value="standard">Standard Pentest (OWASP Top 10 + PoCs)</option>
-                    <option value="deep">Deep Autonomous Audit (Exhaustive Exploitation)</option>
-                  </select>
-                </div>
+                {showAdvanced && (
+                  <div className={styles.advancedBox}>
+                    <div>
+                      <label className={styles.formLabel}>Scan Intensity Mode</label>
+                      <select
+                        className={styles.selectInput}
+                        value={scanMode}
+                        onChange={(e) => setScanMode(e.target.value)}
+                        disabled={isScanning}
+                      >
+                        <option value="quick">Quick Recon (Fast header & surface check)</option>
+                        <option value="standard">Standard Pentest (OWASP Top 10 + PoCs)</option>
+                        <option value="deep">Deep Autonomous Audit (Exhaustive Exploitation)</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className={styles.formLabel}>Scope Instructions & Focus</label>
-                  <input
-                    type="text"
-                    className={styles.textInput}
-                    style={{ paddingLeft: '14px' }}
-                    placeholder='e.g. "Focus on SQLi & IDOR in /api/v1, test credentials user:pass"'
-                    value={instruction}
-                    onChange={(e) => setInstruction(e.target.value)}
-                    disabled={isScanning}
-                  />
-                </div>
+                    <div>
+                      <label className={styles.formLabel}>Scope Instructions & Focus</label>
+                      <input
+                        type="text"
+                        className={styles.textInput}
+                        style={{ paddingLeft: '14px' }}
+                        placeholder='e.g. "Focus on SQLi & IDOR in /api/v1, test credentials user:pass"'
+                        value={instruction}
+                        onChange={(e) => setInstruction(e.target.value)}
+                        disabled={isScanning}
+                      />
+                    </div>
 
-                <div>
-                  <label className={styles.formLabel}>Custom Groq API Key (Optional)</label>
-                  <input
-                    type="password"
-                    className={styles.textInput}
-                    style={{ paddingLeft: '14px' }}
-                    placeholder="gsk_... (Defaults to system env)"
-                    value={customGroqKey}
-                    onChange={(e) => setCustomGroqKey(e.target.value)}
-                    disabled={isScanning}
-                  />
-                </div>
+                    <div>
+                      <label className={styles.formLabel}>Custom Groq API Key (Optional)</label>
+                      <input
+                        type="password"
+                        className={styles.textInput}
+                        style={{ paddingLeft: '14px' }}
+                        placeholder="gsk_... (Defaults to system env)"
+                        value={customGroqKey}
+                        onChange={(e) => setCustomGroqKey(e.target.value)}
+                        disabled={isScanning}
+                      />
+                    </div>
 
-                <div>
-                  <label className={styles.formLabel}>OpenRouter API Key (Fallback AI - Optional)</label>
-                  <input
-                    type="password"
-                    className={styles.textInput}
-                    style={{ paddingLeft: '14px' }}
-                    placeholder="sk-or-v1-... (Defaults to system env free tier)"
-                    value={customOpenRouterKey}
-                    onChange={(e) => setCustomOpenRouterKey(e.target.value)}
-                    disabled={isScanning}
-                  />
-                </div>
+                    <div>
+                      <label className={styles.formLabel}>OpenRouter API Key (Fallback AI - Optional)</label>
+                      <input
+                        type="password"
+                        className={styles.textInput}
+                        style={{ paddingLeft: '14px' }}
+                        placeholder="sk-or-v1-... (Defaults to system env free tier)"
+                        value={customOpenRouterKey}
+                        onChange={(e) => setCustomOpenRouterKey(e.target.value)}
+                        disabled={isScanning}
+                      />
+                    </div>
 
-                {activeTab === 'repo' && (
-                  <div>
-                    <label className={styles.formLabel}>GitHub Token (Optional)</label>
-                    <input
-                      type="password"
-                      className={styles.textInput}
-                      style={{ paddingLeft: '14px' }}
-                      placeholder="ghp_... (Higher rate limits & private repos)"
-                      value={customGithubToken}
-                      onChange={(e) => setCustomGithubToken(e.target.value)}
-                      disabled={isScanning}
-                    />
+                    {activeTab === 'repo' && (
+                      <div>
+                        <label className={styles.formLabel}>GitHub Token (Optional)</label>
+                        <input
+                          type="password"
+                          className={styles.textInput}
+                          style={{ paddingLeft: '14px' }}
+                          placeholder="ghp_... (Higher rate limits & private repos)"
+                          value={customGithubToken}
+                          onChange={(e) => setCustomGithubToken(e.target.value)}
+                          disabled={isScanning}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
             )}
 
             {errorMsg && (
@@ -559,28 +921,51 @@ export default function StrixPentestPage() {
                 Audit History
               </button>
 
-              <button
-                type="submit"
-                className={styles.launchBtn}
-                disabled={isScanning}
-              >
-                {isScanning ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    Auditing Target... ({scanProgress}%)
-                  </>
+              {activeTab === 'stress' ? (
+                isScanning ? (
+                  <button
+                    type="button"
+                    className={styles.stopStressBtn}
+                    onClick={handleStopStressTest}
+                  >
+                    <StopCircle size={18} />
+                    Hentikan Pengujian Sekarang
+                  </button>
                 ) : (
-                  <>
-                    <Play size={18} />
-                    Launch Autonomous Pentest
-                  </>
-                )}
-              </button>
+                  <button
+                    type="submit"
+                    className={styles.launchBtn}
+                    disabled={isScanning}
+                    style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' }}
+                  >
+                    <Zap size={18} />
+                    Mulai Pengujian Beban / Stress Test
+                  </button>
+                )
+              ) : (
+                <button
+                  type="submit"
+                  className={styles.launchBtn}
+                  disabled={isScanning}
+                >
+                  {isScanning ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" />
+                      Auditing Target... ({scanProgress}%)
+                    </>
+                  ) : (
+                    <>
+                      <Play size={18} />
+                      Launch Autonomous Pentest
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </form>
         </div>
 
-        {/* Real-time Progress & Terminal */}
+        {/* Real-time Progress & Live Telemetry Terminal */}
         {isScanning && (
           <div className={styles.progressCard}>
             <div className={styles.progressHeader}>
@@ -597,6 +982,89 @@ export default function StrixPentestPage() {
               <div className={styles.progressBarFill} style={{ width: `${scanProgress}%` }} />
             </div>
 
+            {/* Live Telemetry Card for Stress Testing */}
+            {activeTab === 'stress' && stressLiveTick && (
+              <div className={styles.stressLiveCard}>
+                <div className={styles.stressLiveHeader}>
+                  <div className={styles.stressLiveTitle}>
+                    <span className={styles.livePulseDot} />
+                    Live Server Telemetry & Throughput Monitor
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.stopStressBtn}
+                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                    onClick={handleStopStressTest}
+                  >
+                    <StopCircle size={15} />
+                    Stop Test
+                  </button>
+                </div>
+
+                <div className={styles.stressLiveGrid}>
+                  <div className={styles.liveMetricCard}>
+                    <div className={styles.liveMetricLabel}>Live Throughput</div>
+                    <div className={styles.liveMetricValue} style={{ color: '#38bdf8' }}>
+                      {stressLiveTick.liveRps || 0} <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>req/s</span>
+                    </div>
+                  </div>
+                  <div className={styles.liveMetricCard}>
+                    <div className={styles.liveMetricLabel}>Avg Latency</div>
+                    <div className={styles.liveMetricValue}>
+                      {stressLiveTick.avgLatency || 0} <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>ms</span>
+                    </div>
+                  </div>
+                  <div className={styles.liveMetricCard}>
+                    <div className={styles.liveMetricLabel}>Completed Reqs</div>
+                    <div className={styles.liveMetricValue}>
+                      {(stressLiveTick.completed || 0).toLocaleString()} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>/ {(stressLiveTick.total || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className={styles.liveMetricCard}>
+                    <div className={styles.liveMetricLabel}>Success (2xx)</div>
+                    <div className={styles.liveMetricValue} style={{ color: '#34d399' }}>
+                      {(stressLiveTick.successCount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className={styles.liveMetricCard}>
+                    <div className={styles.liveMetricLabel}>Errors / Failures</div>
+                    <div className={styles.liveMetricValue} style={{ color: (stressLiveTick.errorCount || 0) > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                      {(stressLiveTick.errorCount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status code pills */}
+                {stressLiveTick.statusCounts && (
+                  <div className={styles.statusPillsWrap}>
+                    {Object.entries(stressLiveTick.statusCounts).map(([status, count]) => {
+                      const is2xx = status.startsWith('2');
+                      const is3xx = status.startsWith('3');
+                      const is4xx = status.startsWith('4');
+                      const is5xx = status.startsWith('5');
+                      const pillClass = is2xx ? styles.statusPill2xx : is3xx ? styles.statusPill3xx : is4xx ? styles.statusPill4xx : is5xx ? styles.statusPill5xx : styles.statusPillErr;
+                      return (
+                        <span key={status} className={`${styles.statusPill} ${pillClass}`}>
+                          HTTP {status}: {count}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Breaking Point Warning Banner */}
+                {stressLiveTick.breakingPointDetected && (
+                  <div className={styles.breakingPointBanner}>
+                    <AlertTriangle size={20} />
+                    <div>
+                      <strong>Perhatian: Titik Degradasi Server (Breaking Point) Terdeteksi!</strong>
+                      <div>Tingkat kegagalan atau timeout meningkat signifikan saat volume beban dinaikkan.</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className={styles.terminalLogs}>
               {scanLogs.map((log, index) => (
                 <div key={index} className={styles.terminalLine}>
@@ -612,8 +1080,18 @@ export default function StrixPentestPage() {
         {/* Scan Results View */}
         {scanResult && !isScanning && (
           <div>
-            {/* Risk Banner */}
-            <div className={styles.riskBanner}>
+            {scanResult.stressResult ? (
+              <StressReportView
+                stressResult={scanResult.stressResult}
+                copiedId={copiedId}
+                handleCopy={handleCopy}
+                downloadJSON={downloadJSON}
+                downloadMarkdownReport={downloadMarkdownReport}
+              />
+            ) : (
+              <>
+                {/* Risk Banner */}
+                <div className={styles.riskBanner}>
               <div className={styles.riskGauge}>
                 <span className={styles.riskScoreNum}>{scanResult.summary?.riskScore || 0}</span>
                 <span className={styles.riskScoreLabel}>Risk Score</span>
@@ -1405,6 +1883,8 @@ export default function StrixPentestPage() {
                 })
               )}
             </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1442,17 +1922,22 @@ export default function StrixPentestPage() {
                     >
                       <div style={{ flex: 1, minWidth: 0, paddingRight: '12px' }}>
                         <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-main)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.target}
+                          {item.targetType === 'stress' ? `⚡ ${item.target}` : item.target}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                          {new Date(item.createdAt).toLocaleString()} • {item.scanMode?.toUpperCase()} • {item.summary?.totalVulnerabilities || 0} findings
+                          {new Date(item.createdAt).toLocaleString()} • {item.targetType === 'stress' ? 'LOAD TEST' : item.scanMode?.toUpperCase()} •{' '}
+                          {item.targetType === 'stress'
+                            ? `${(item.stressResult?.completedTotal || 0).toLocaleString()} reqs @ ${item.stressResult?.concurrency || 0} CCU (${item.stressResult?.averageRps || 0} req/s)`
+                            : `${item.summary?.totalVulnerabilities || 0} findings`}
                         </div>
                       </div>
 
                       <div className={styles.historyItemRight}>
                         <span
                           className={
-                            item.summary?.riskRating === 'CRITICAL'
+                            item.targetType === 'stress'
+                              ? styles.badgeStress
+                              : item.summary?.riskRating === 'CRITICAL'
                               ? styles.badgeCrit
                               : item.summary?.riskRating === 'HIGH'
                               ? styles.badgeHigh
@@ -1461,7 +1946,9 @@ export default function StrixPentestPage() {
                               : styles.badgeLow
                           }
                         >
-                          {item.summary?.riskRating || 'AUDITED'}
+                          {item.targetType === 'stress'
+                            ? `GRADE ${item.stressResult?.analysis?.grade || 'TEST'}`
+                            : item.summary?.riskRating || 'AUDITED'}
                         </span>
 
                         <button
