@@ -25,18 +25,18 @@ export function getStressUserAgent() {
   return STRESS_USER_AGENTS[Math.floor(Math.random() * STRESS_USER_AGENTS.length)];
 }
 
-// High-performance pooled keep-alive agents to avoid local socket/port exhaustion
+// High-performance pooled keep-alive agents without socket bottlenecks (no upper limit on concurrency)
 const directHttpAgent = new http.Agent({
   keepAlive: true,
-  maxSockets: 1000,
-  maxFreeSockets: 256,
+  maxSockets: Infinity,
+  maxFreeSockets: 512,
   timeout: 60000,
 });
 
 const directHttpsAgent = new https.Agent({
   keepAlive: true,
-  maxSockets: 1000,
-  maxFreeSockets: 256,
+  maxSockets: Infinity,
+  maxFreeSockets: 512,
   timeout: 60000,
   rejectUnauthorized: false, // Allow testing staging/self-signed certs
 });
@@ -179,9 +179,9 @@ export async function runServerStressTest({
   const parsedUrl = new URL(targetUrl);
   const isHttps = parsedUrl.protocol === 'https:';
 
-  // Sanitize numeric inputs (no upper limit on totalRequests!)
+  // Sanitize numeric inputs without upper limit on totalRequests or concurrency (user-controlled CCU!)
   const plannedTotal = Math.max(parseInt(totalRequests, 10) || 100, 1);
-  const activeConcurrency = Math.min(Math.max(parseInt(concurrency, 10) || 10, 1), 500);
+  const activeConcurrency = Math.max(parseInt(concurrency, 10) || 10, 1);
   const pacedDelay = Math.max(parseInt(intervalMs, 10) || 0, 0);
   const reqTimeout = Math.max(parseInt(timeoutMs, 10) || 10000, 1000);
 
@@ -406,9 +406,10 @@ export async function runServerStressTest({
     }
   }
 
-  // Spawn concurrency worker pool
+  // Spawn concurrency worker pool (up to plannedTotal if concurrency > plannedTotal)
   const workers = [];
-  for (let i = 0; i < activeConcurrency; i++) {
+  const workerCount = Math.min(activeConcurrency, plannedTotal);
+  for (let i = 0; i < workerCount; i++) {
     workers.push(workerLoop());
   }
 

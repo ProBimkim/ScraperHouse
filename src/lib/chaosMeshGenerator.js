@@ -137,8 +137,8 @@ export const options = {
       executor: 'ramping-arrival-rate',
       startRate: ${opts.startRateRps},
       timeUnit: '1s',
-      preAllocatedVUs: 100,
-      maxVUs: 2000,
+      preAllocatedVUs: ${Math.max(Math.round(Number(opts.peakTargetRps || 1000) * 0.2), 100)},
+      maxVUs: ${Math.max(Number(opts.peakTargetRps || 1000) * 3, 5000)},
       stages: [
         { duration: '1m', target: ${opts.warmupTargetRps} },  // Warm-up
         { duration: '3m', target: ${opts.peakTargetRps} }, // Peak Stress Load (${opts.peakTargetRps} RPS)

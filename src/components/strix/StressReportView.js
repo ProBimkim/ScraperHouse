@@ -69,7 +69,7 @@ export default function StressReportView({
             <div style={{ marginTop: '8px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
               Target: <strong style={{ color: 'var(--text-main)' }}>{stressResult.target}</strong> • Volume:{' '}
               <strong>{(stressResult.completedTotal || 0).toLocaleString()} reqs</strong> • Concurrency:{' '}
-              <strong>{stressResult.concurrency} CCU</strong> • Durasi:{' '}
+              <strong>{(Number(stressResult.concurrency) || 0).toLocaleString()} CCU</strong> • Durasi:{' '}
               <strong>{stressResult.durationSeconds} detik</strong> • Throughput Rata-rata:{' '}
               <strong style={{ color: '#38bdf8' }}>{stressResult.averageRps} req/s</strong>
             </div>
@@ -80,14 +80,14 @@ export default function StressReportView({
         <div className={styles.capacityBadges}>
           <div className={styles.capacityCard}>
             <div className={styles.capacityCardVal}>
-              {safeCapacity.safeRps || stressResult.averageRps || 0}
+              {(Number(safeCapacity.safeRps || stressResult.averageRps) || 0).toLocaleString()}
               <span style={{ fontSize: '0.8rem', fontWeight: 500, marginLeft: '4px' }}>req/s</span>
             </div>
             <div className={styles.capacityCardLbl}>Batas Maksimum RPS Aman</div>
           </div>
           <div className={styles.capacityCard}>
             <div className={styles.capacityCardVal}>
-              {safeCapacity.safeCcu || stressResult.concurrency || 0}
+              {(Number(safeCapacity.safeCcu || stressResult.concurrency) || 0).toLocaleString()}
               <span style={{ fontSize: '0.8rem', fontWeight: 500, marginLeft: '4px' }}>CCU</span>
             </div>
             <div className={styles.capacityCardLbl}>Batas Pengguna Bersamaan</div>

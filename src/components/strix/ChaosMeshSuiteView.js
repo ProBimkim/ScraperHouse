@@ -579,16 +579,15 @@ export default function ChaosMeshSuiteView() {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>k6 Parallel Runners (Pod)</label>
-            <select
-              className={styles.selectInput}
+            <label className={styles.label}>k6 Parallel Runners / CCU Workers (Tanpa Batas Maksimum)</label>
+            <input
+              type="number"
+              min="1"
+              className={styles.textInput}
               value={k6Parallelism}
               onChange={(e) => setK6Parallelism(e.target.value)}
-            >
-              <option value="2">2 Runner Pods (500 RPS/runner)</option>
-              <option value="4">4 Runner Pods (250 RPS/runner)</option>
-              <option value="8">8 Runner Pods (125 RPS/runner)</option>
-            </select>
+              placeholder="e.g. 2, 4, 8, 16, 32..."
+            />
           </div>
 
           <div className={styles.inputGroup}>
@@ -729,16 +728,16 @@ export default function ChaosMeshSuiteView() {
                 <div className={styles.nodeBox}>
                   <div className={styles.nodeHeader}>k6 Distributed Runners ({k6Parallelism} Pods)</div>
                   <div className={styles.podPillRunner}>
-                    <Flame size={14} /> Runner 1: {Math.round(Number(peakTargetRps) / Number(k6Parallelism))} RPS
+                    <Flame size={14} /> Runner 1: {Math.round(Number(peakTargetRps) / Math.max(Number(k6Parallelism) || 1, 1))} RPS
                   </div>
                   <div className={styles.podPillRunner}>
-                    <Flame size={14} /> Runner 2: {Math.round(Number(peakTargetRps) / Number(k6Parallelism))} RPS
+                    <Flame size={14} /> Runner 2: {Math.round(Number(peakTargetRps) / Math.max(Number(k6Parallelism) || 1, 1))} RPS
                   </div>
                   <div className={styles.podPillRunner}>
-                    <Flame size={14} /> Runner 3: {Math.round(Number(peakTargetRps) / Number(k6Parallelism))} RPS
+                    <Flame size={14} /> Runner 3: {Math.round(Number(peakTargetRps) / Math.max(Number(k6Parallelism) || 1, 1))} RPS
                   </div>
                   <div className={styles.podPillRunner}>
-                    <Flame size={14} /> Runner 4: {Math.round(Number(peakTargetRps) / Number(k6Parallelism))} RPS
+                    <Flame size={14} /> Runner 4+: {Math.round(Number(peakTargetRps) / Math.max(Number(k6Parallelism) || 1, 1))} RPS / pod
                   </div>
                 </div>
               </div>

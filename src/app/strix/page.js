@@ -236,7 +236,7 @@ export default function StrixPentestPage() {
     }
 
     const volumeNum = Math.max(parseInt(stressVolume, 10) || 100, 1);
-    const concurrencyNum = Math.min(Math.max(parseInt(stressConcurrency, 10) || 10, 1), 500);
+    const concurrencyNum = Math.max(parseInt(stressConcurrency, 10) || 10, 1);
 
     const controller = new AbortController();
     setStressAbortController(controller);
@@ -482,11 +482,11 @@ export default function StrixPentestPage() {
       md += `## Ringkasan Eksekutif\n\n${s.analysis?.statusSummary}\n\n`;
       md += `## Metrik Kapasitas & Beban\n\n`;
       md += `- **Total Request:** ${(s.completedTotal || 0).toLocaleString()}\n`;
-      md += `- **Concurrency (CCU):** ${s.concurrency} virtual users\n`;
+      md += `- **Concurrency (CCU):** ${(Number(s.concurrency) || 0).toLocaleString()} virtual users\n`;
       md += `- **Durasi Pengujian:** ${s.durationSeconds} detik\n`;
       md += `- **Throughput Rata-rata:** ${s.averageRps} req/s\n`;
-      md += `- **Batas Aman Maksimum (Safe RPS):** ${s.analysis?.safeCapacity?.safeRps || s.averageRps} req/s\n`;
-      md += `- **Batas Pengguna Bersamaan Aman (Safe CCU):** ${s.analysis?.safeCapacity?.safeCcu || s.concurrency} CCU\n\n`;
+      md += `- **Batas Aman Maksimum (Safe RPS):** ${(Number(s.analysis?.safeCapacity?.safeRps || s.averageRps) || 0).toLocaleString()} req/s\n`;
+      md += `- **Batas Pengguna Bersamaan Aman (Safe CCU):** ${(Number(s.analysis?.safeCapacity?.safeCcu || s.concurrency) || 0).toLocaleString()} CCU\n\n`;
       md += `## Latensi Respon (Percentiles)\n\n`;
       md += `- **Min Latency:** ${s.latency?.min} ms\n`;
       md += `- **Average Latency:** ${s.latency?.avg} ms\n`;
@@ -787,22 +787,32 @@ export default function StrixPentestPage() {
 
                       <div>
                         <label className={styles.formLabel}>
-                          Concurrency (Virtual Users / CCU Bersamaan)
+                          Concurrency (Virtual Users / CCU Bersamaan - Tanpa Batas Maksimum)
                         </label>
-                        <select
-                          className={styles.selectInput}
+                        <input
+                          type="number"
+                          min="1"
+                          className={styles.textInput}
+                          style={{ paddingLeft: '14px', fontWeight: 600 }}
+                          placeholder="e.g. 10, 50, 200, 1000, 5000..."
                           value={stressConcurrency}
                           onChange={(e) => setStressConcurrency(e.target.value)}
                           disabled={isScanning}
-                        >
-                          <option value="5">5 CCU (Ringan / Dev Local)</option>
-                          <option value="10">10 CCU (Beban Normal)</option>
-                          <option value="20">20 CCU (Menengah - Rekomendasi Awal)</option>
-                          <option value="50">50 CCU (Tinggi)</option>
-                          <option value="100">100 CCU (Sangat Tinggi)</option>
-                          <option value="200">200 CCU (Extreme Stress)</option>
-                          <option value="500">500 CCU (Ultra Peak)</option>
-                        </select>
+                        />
+                        <div className={styles.presetRow}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preset Cepat:</span>
+                          {['10', '25', '50', '100', '250', '500', '1000', '2500', '5000', '10000'].map((ccu) => (
+                            <button
+                              key={ccu}
+                              type="button"
+                              className={`${styles.presetPill} ${stressConcurrency === ccu ? styles.presetPillActive : ''}`}
+                              onClick={() => setStressConcurrency(ccu)}
+                              disabled={isScanning}
+                            >
+                              {Number(ccu) >= 1000 ? `${Number(ccu) / 1000}k` : ccu} CCU
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
                       <div>
