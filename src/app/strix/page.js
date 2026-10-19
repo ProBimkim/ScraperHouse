@@ -582,6 +582,31 @@ export default function StrixPentestPage() {
       md += `**Endpoint Target:** ${ato.targetUrl}\n`;
       md += `**Ringkasan:** ${ato.executiveSummary}\n\n`;
 
+      if (ato.discoveredAdminCredentials?.length) {
+        md += `### Temuan Kredensial & Akun Admin Teridentifikasi (Verified ATO Proof)\n\n`;
+        md += `| Tipe Akun | Akun Sasaran | Password (Cleartext) | Password Hash / Sumber | Endpoint | Status &\n`;
+        md += `|---|---|---|---|---|---|\n`;
+        ato.discoveredAdminCredentials.forEach((c) => {
+          md += `| ${c.accountType} | \`${c.targetAccount}\` | \`${c.passwordCleartext}\` | ${c.passwordHash} | ${c.authEndpoint} | ${c.status} (${c.evidenceDetails || ''}) |\n`;
+        });
+        md += `\n`;
+      }
+
+      if (ato.bruteForceAuditResults?.attempts?.length) {
+        const bf = ato.bruteForceAuditResults;
+        md += `### Log Eksekusi Brute-Force & Pengujian Kredensial Langsung (Live Probe Telemetry)\n\n`;
+        md += `- **Total Diuji:** ${bf.totalTested || bf.attempts.length}\n`;
+        md += `- **Valid / Tembus:** ${bf.validFoundCount || 0}\n`;
+        md += `- **Ditolak:** ${bf.rejectedCount || 0}\n`;
+        md += `- **Ringkasan:** ${bf.summary || 'N/A'}\n\n`;
+        md += `| # | Akun Sasaran | Password Diuji | Status HTTP | Latensi | Hasil Otentikasi | Cuplikan Respons Server |\n`;
+        md += `|---|---|---|---|---|---|---|\n`;
+        bf.attempts.forEach((att, idx) => {
+          md += `| ${att.attemptNumber || idx + 1} | \`${att.account}\` | \`${att.password}\` | HTTP ${att.status} | ${att.latencyMs}ms | ${att.isValid ? '**VALID / TEMBUS**' : att.resultStatus} | \`${(att.responseSnippet || '').replace(/\|/g, '/')}\` |\n`;
+        });
+        md += `\n`;
+      }
+
       md += `### Perbandingan Vektor Ancaman (Brute-Force vs. Credential Stuffing)\n\n`;
       md += `| Parameter | Brute-Force | Credential Stuffing | Konteks Teknis |\n`;
       md += `|---|---|---|---|\n`;
@@ -750,7 +775,7 @@ export default function StrixPentestPage() {
                         <input
                           type="text"
                           className={styles.textInput}
-                          placeholder="Masukkan domain/URL website saja, misal: sma3jogja.sch.id atau https://example.com"
+                          placeholder="Masukkan domain/URL website saja, misal: sma3jogja.sch.id atau https://target-domain.com"
                           value={stressUrl}
                           onChange={(e) => setStressUrl(e.target.value)}
                           disabled={isScanning}
@@ -918,7 +943,7 @@ export default function StrixPentestPage() {
                     className={styles.textInput}
                     placeholder={
                       activeTab === 'url'
-                        ? 'https://example.com or https://api.staging.com'
+                        ? 'https://target-domain.com or https://api.target-domain.com'
                         : 'https://github.com/owner/repository'
                     }
                     value={targetInput}

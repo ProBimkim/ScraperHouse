@@ -34,7 +34,7 @@ import {
   Camera
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
-
+import AccountTakeoverAssessmentCard from '@/components/strix/AccountTakeoverAssessmentCard';
 
 export default function StrixDetailPage({ params }) {
   const { id } = use(params);
@@ -632,6 +632,11 @@ export default function StrixDetailPage({ params }) {
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Account Takeover Assessment (ATO Evaluation Suite) */}
+              {scanResult.accountTakeoverAssessment && (
+                <AccountTakeoverAssessmentCard assessment={scanResult.accountTakeoverAssessment} />
               )}
 
               {/* Toolbar */}

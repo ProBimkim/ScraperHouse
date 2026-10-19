@@ -44,6 +44,8 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
   const remediationPlan = assessment.developerRemediationPlan || [];
   const monitored = profiling.monitoredEndpoints || [];
   const credsList = assessment.discoveredAdminCredentials || [];
+  const bruteForce = assessment.bruteForceAuditResults || {};
+  const attempts = bruteForce.attempts || [];
 
   return (
     <div className={styles.atoContainer}>
@@ -84,7 +86,7 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
       </div>
 
       {/* Temuan Kredensial & Akun Admin Teridentifikasi (Tanpa Terpotong) */}
-      {credsList.length > 0 && (
+      {credsList.length > 0 ? (
         <div className={styles.credsContainer}>
           <div className={styles.credsHeader}>
             <div className={styles.credsTitle}>
@@ -96,7 +98,7 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
             </span>
           </div>
           <p className={styles.credsSubtitle}>
-            Hasil audit keamanan dan simulasi pengujian ketahanan autentikasi mengidentifikasi pasangan akun dan kata sandi administratif berikut secara lengkap tanpa sensor/pemotongan:
+            Hasil audit keamanan dan pengujian langsung mengidentifikasi pasangan akun dan kata sandi administratif valid berikut tanpa sensor/pemotongan:
           </p>
           <div className={styles.tableWrapper}>
             <table className={styles.credsTable}>
@@ -105,10 +107,10 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
                   <th>Tipe Akun</th>
                   <th>Username / Akun Sasaran</th>
                   <th>Password Teridentifikasi (Cleartext)</th>
-                  <th>Password Hash / Sample</th>
+                  <th>Password Hash / Sumber Bukti</th>
                   <th>Endpoint Terkena Dampak</th>
                   <th>Metode Temuan</th>
-                  <th>Status &amp; Bukti</th>
+                  <th>Status &amp; Bukti Ril</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,6 +155,124 @@ export default function AccountTakeoverAssessmentCard({ assessment }) {
                       <div style={{ fontSize: '0.75rem', color: '#fca5a5', marginTop: '4px' }}>
                         {cred.evidenceDetails}
                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.credsEmptyBox}>
+          <CheckCircle2 size={18} style={{ color: '#34d399', flexShrink: 0 }} />
+          <div>
+            <strong>Hasil Verifikasi Kredensial Langsung:</strong> Tidak ditemukan kredensial default yang valid dari kamus kata sandi standar, dan tidak terdeteksi kebocoran variabel rahasia pada target. Seluruh percobaan ditolak oleh endpoint autentikasi.
+          </div>
+        </div>
+      )}
+
+      {/* Log Eksekusi Brute-Force & Pengujian Kredensial Langsung (Live Probe Telemetry) */}
+      {attempts.length > 0 && (
+        <div className={styles.probeContainer}>
+          <div className={styles.probeHeader}>
+            <div className={styles.probeTitle}>
+              <Activity size={18} style={{ color: '#c084fc' }} />
+              Log Eksekusi Brute-Force &amp; Pengujian Kredensial Langsung (Live Probe Telemetry)
+            </div>
+            <div className={styles.probeStatsRow}>
+              <span className={`${styles.probeStatPill} ${styles.probeStatNeutral}`}>
+                Total: {bruteForce.totalTested || attempts.length} Diuji
+              </span>
+              <span className={`${styles.probeStatPill} ${(bruteForce.validFoundCount || 0) > 0 ? styles.probeStatDanger : styles.probeStatSuccess}`}>
+                Valid / Tembus: {bruteForce.validFoundCount || 0}
+              </span>
+              <span className={`${styles.probeStatPill} ${styles.probeStatNeutral}`}>
+                Ditolak: {bruteForce.rejectedCount || 0}
+              </span>
+              {(bruteForce.rateLimitedCount || 0) > 0 && (
+                <span className={`${styles.probeStatPill} ${styles.probeStatWarning}`}>
+                  Rate-Limited (429): {bruteForce.rateLimitedCount}
+                </span>
+              )}
+            </div>
+          </div>
+          {bruteForce.summary && (
+            <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0, lineHeight: 1.45 }}>
+              {bruteForce.summary}
+            </p>
+          )}
+          <div className={styles.tableWrapper} style={{ marginBottom: 0 }}>
+            <table className={styles.probeTable}>
+              <thead>
+                <tr>
+                  <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '22%' }}>Akun Sasaran (Probed Account)</th>
+                  <th style={{ width: '22%' }}>Password yang Diuji</th>
+                  <th style={{ width: '12%' }}>HTTP Status</th>
+                  <th style={{ width: '10%' }}>Latensi</th>
+                  <th style={{ width: '16%' }}>Hasil Otentikasi</th>
+                  <th style={{ width: '16%' }}>Bukti Respons Server (Raw Snippet)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attempts.map((att, idx) => (
+                  <tr key={idx}>
+                    <td style={{ color: '#64748b', fontWeight: 700 }}>{att.attemptNumber || idx + 1}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <code className={styles.credCodeHighlight}>{att.account}</code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(att.account, `probe_acc_${idx}`)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                          title="Copy account"
+                        >
+                          {copiedKey === `probe_acc_${idx}` ? <Check size={12} style={{ color: '#34d399' }} /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <code className={styles.credCodePassword}>{att.password}</code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(att.password, `probe_pwd_${idx}`)}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+                          title="Copy password"
+                        >
+                          {copiedKey === `probe_pwd_${idx}` ? <Check size={12} style={{ color: '#34d399' }} /> : <Copy size={12} />}
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: att.status === 200 || att.status === 302 ? '#34d399' : (att.status === 429 ? '#fbbf24' : '#f87171') }}>
+                        HTTP {att.status}
+                      </span>
+                    </td>
+                    <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{att.latencyMs}ms</td>
+                    <td>
+                      {att.isValid ? (
+                        <span className={styles.probeStatusValid}>VALID / TERAUTENTIKASI (ATO)</span>
+                      ) : att.status === 429 ? (
+                        <span className={styles.probeStatusRateLimited}>RATE LIMITED (429)</span>
+                      ) : (
+                        <span className={styles.probeStatusRejected}>DITOLAK ({att.status || 401})</span>
+                      )}
+                    </td>
+                    <td>
+                      <code className={styles.rawSnippetCode} title={att.responseSnippet}>
+                        {att.responseSnippet}
+                      </code>
+                      {att.redirectLocation && (
+                        <div style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: '2px' }}>
+                          Redirect: {att.redirectLocation}
+                        </div>
+                      )}
+                      {att.cookies && att.cookies !== 'None' && (
+                        <div style={{ fontSize: '0.72rem', color: '#a78bfa', marginTop: '2px' }}>
+                          Cookie: {att.cookies}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

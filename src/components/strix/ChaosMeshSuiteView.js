@@ -109,45 +109,19 @@ export default function ChaosMeshSuiteView({ initialUrl = '', scanResult = null 
       Array.isArray(scanResult.discoveredAdminCredentials) &&
       scanResult.discoveredAdminCredentials.length > 0
     ) {
-      return scanResult.discoveredAdminCredentials;
+      return scanResult.discoveredAdminCredentials.map(c => ({
+        accountType: c.accountType || 'Administrative Account',
+        username: c.targetAccount || c.username || 'admin',
+        passwordCleartext: c.passwordCleartext,
+        passwordHash: c.passwordHash || '[Confirmed Live Exposure]',
+        endpoint: c.authEndpoint || c.endpoint || effectiveTargetUrl,
+        attackVector: c.discoveryMethod || c.attackVector || 'Account Takeover Exposure',
+        verified: true,
+        risk: c.compromiseSeverity || c.risk || 'CRITICAL',
+        description: c.evidenceDetails || c.description || 'Kredensial valid tervalidasi pada target.',
+      }));
     }
-    const base = effectiveTargetUrl || 'https://target-system.local';
-    const cleanBase = base.replace(/\/$/, '');
-    return [
-      {
-        accountType: 'Administrative Superuser (Root Admin)',
-        username: 'admin',
-        passwordCleartext: 'P@ssw0rd2025!',
-        passwordHash: '$2y$12$e8xL4K0gI8mR1Tz3Z7WkEuYq5Q8hX7b2v.8Xm9s3pL1z9',
-        endpoint: `${cleanBase}/admin/login`,
-        attackVector: 'Account Takeover (Credential Exposure Spraying)',
-        verified: true,
-        risk: 'CRITICAL',
-        description: 'Kredensial admin berhak istimewa penuh berhasil divalidasi via endpoint login administrative tanpa proteksi MFA/lockout.'
-      },
-      {
-        accountType: 'Secondary Administrator / CMS Manager',
-        username: 'administrator',
-        passwordCleartext: 'admin123',
-        passwordHash: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
-        endpoint: `${cleanBase}/wp-login.php`,
-        attackVector: 'Credential Stuffing & Dictionary Enumeration',
-        verified: true,
-        risk: 'HIGH',
-        description: 'Kombinasi password default teridentifikasi aktif pada portal manajemen konten dengan hak edit publikasi.'
-      },
-      {
-        accountType: 'Production Environment Secret Leak',
-        username: 'db_admin / master_root',
-        passwordCleartext: 'SecretProd99!_k8sKey',
-        passwordHash: 'RAW_ENV_EXPOSURE',
-        endpoint: `${cleanBase}/.env`,
-        attackVector: 'Information Disclosure (.env dotfile exposure)',
-        verified: true,
-        risk: 'CRITICAL',
-        description: 'File konfigurasi environment bocor membongkar kunci rahasia basis data dan session signing key.'
-      }
-    ];
+    return [];
   }, [scanResult, effectiveTargetUrl]);
   const [peakTargetRps, setPeakTargetRps] = useState('1000');
   const [networkLatency, setNetworkLatency] = useState('150ms');
@@ -581,10 +555,10 @@ export default function ChaosMeshSuiteView({ initialUrl = '', scanResult = null 
             <button
               type="button"
               className={styles.botUrlChip}
-              onClick={() => setTargetUrl('example.com')}
+              onClick={() => setTargetUrl('target-domain.com')}
               disabled={botStatus === 'running'}
             >
-              Domain Web Publik (example.com)
+              Domain Web Target (target-domain.com)
             </button>
             <button
               type="button"
@@ -763,83 +737,100 @@ export default function ChaosMeshSuiteView({ initialUrl = '', scanResult = null 
             </div>
 
             {/* Discovered Admin Credentials & Account Takeover Evidence */}
-            <div className={styles.botCredsSection}>
-              <div className={styles.botCredsHeader}>
-                <div className={styles.botCredsTitle}>
-                  <Key size={18} />
-                  Temuan Kredensial &amp; Akun Admin Terbuka (Account Takeover &amp; Privilege Evidence)
+            {adminCredentialsList.length > 0 ? (
+              <div className={styles.botCredsSection}>
+                <div className={styles.botCredsHeader}>
+                  <div className={styles.botCredsTitle}>
+                    <Key size={18} />
+                    Temuan Kredensial &amp; Akun Admin Terbuka (Account Takeover &amp; Privilege Evidence)
+                  </div>
+                  <span className={styles.botCredsBadge}>
+                    {adminCredentialsList.length} Akun Teridentifikasi • Tampil Lengkap
+                  </span>
                 </div>
-                <span className={styles.botCredsBadge}>
-                  {adminCredentialsList.length} Akun Teridentifikasi • Tampil Lengkap
-                </span>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: '#cbd5e1', margin: 0 }}>
-                Berikut adalah kredensial akun administratif dan kebocoran rahasia yang berhasil diidentifikasi dari endpoint target selama simulasi keamanan dan pengujian ketahanan:
-              </p>
+                <p style={{ fontSize: '0.8rem', color: '#cbd5e1', margin: 0 }}>
+                  Berikut adalah kredensial akun administratif dan kebocoran rahasia yang berhasil diidentifikasi dari endpoint target selama simulasi keamanan dan pengujian ketahanan:
+                </p>
 
-              <div className={styles.botCredsTableWrapper}>
-                <table className={styles.botCredsTable}>
-                  <thead>
-                    <tr>
-                      <th>Tipe Akun &amp; Severity</th>
-                      <th>Username</th>
-                      <th>Password (Cleartext)</th>
-                      <th>Hash / Token Bukti</th>
-                      <th>Endpoint Target</th>
-                      <th>Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminCredentialsList.map((cred, idx) => (
-                      <tr key={idx}>
-                        <td>
-                          <div style={{ fontWeight: 700, color: '#f8fafc' }}>{cred.accountType}</div>
-                          <div style={{ fontSize: '0.7rem', color: cred.risk === 'CRITICAL' ? '#f87171' : '#fbbf24' }}>
-                            {cred.attackVector}
-                          </div>
-                        </td>
-                        <td>
-                          <span className={styles.botCredUsername}>{cred.username}</span>
-                        </td>
-                        <td>
-                          <span className={styles.botCredPassword}>{cred.passwordCleartext}</span>
-                        </td>
-                        <td>
-                          <code style={{ fontSize: '0.72rem', color: '#94a3b8', wordBreak: 'break-all' }}>
-                            {cred.passwordHash}
-                          </code>
-                        </td>
-                        <td>
-                          <span className={styles.botCredEndpoint}>{cred.endpoint}</span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            <button
-                              type="button"
-                              className={styles.botCredCopyBtn}
-                              onClick={() => handleCopy(`${cred.username}:${cred.passwordCleartext}`, `cred-${idx}`)}
-                              title="Salin username:password"
-                            >
-                              {copiedKey === `cred-${idx}` ? <Check size={12} /> : <Copy size={12} />}
-                              {copiedKey === `cred-${idx}` ? 'Tersalin' : 'Salin User:Pass'}
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.botCredCopyBtn}
-                              onClick={() => handleCopy(cred.passwordCleartext, `pass-${idx}`)}
-                              title="Salin hanya password"
-                            >
-                              {copiedKey === `pass-${idx}` ? <Check size={12} /> : <Lock size={12} />}
-                              {copiedKey === `pass-${idx}` ? 'Tersalin' : 'Password'}
-                            </button>
-                          </div>
-                        </td>
+                <div className={styles.botCredsTableWrapper}>
+                  <table className={styles.botCredsTable}>
+                    <thead>
+                      <tr>
+                        <th>Tipe Akun &amp; Severity</th>
+                        <th>Username</th>
+                        <th>Password (Cleartext)</th>
+                        <th>Hash / Token Bukti</th>
+                        <th>Endpoint Target</th>
+                        <th>Aksi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {adminCredentialsList.map((cred, idx) => (
+                        <tr key={idx}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: '#f8fafc' }}>{cred.accountType}</div>
+                            <div style={{ fontSize: '0.7rem', color: cred.risk === 'CRITICAL' ? '#f87171' : '#fbbf24' }}>
+                              {cred.attackVector}
+                            </div>
+                          </td>
+                          <td>
+                            <span className={styles.botCredUsername}>{cred.username}</span>
+                          </td>
+                          <td>
+                            <span className={styles.botCredPassword}>{cred.passwordCleartext}</span>
+                          </td>
+                          <td>
+                            <code style={{ fontSize: '0.72rem', color: '#94a3b8', wordBreak: 'break-all' }}>
+                              {cred.passwordHash}
+                            </code>
+                          </td>
+                          <td>
+                            <span className={styles.botCredEndpoint}>{cred.endpoint}</span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={styles.botCredCopyBtn}
+                                onClick={() => handleCopy(`${cred.username}:${cred.passwordCleartext}`, `cred-${idx}`)}
+                                title="Salin username:password"
+                              >
+                                {copiedKey === `cred-${idx}` ? <Check size={12} /> : <Copy size={12} />}
+                                {copiedKey === `cred-${idx}` ? 'Tersalin' : 'Salin User:Pass'}
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.botCredCopyBtn}
+                                onClick={() => handleCopy(cred.passwordCleartext, `pass-${idx}`)}
+                                title="Salin hanya password"
+                              >
+                                {copiedKey === `pass-${idx}` ? <Check size={12} /> : <Lock size={12} />}
+                                {copiedKey === `pass-${idx}` ? 'Tersalin' : 'Password'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className={styles.botCredsSection} style={{ border: '1px solid rgba(52, 211, 153, 0.3)', background: 'rgba(52, 211, 153, 0.05)' }}>
+                <div className={styles.botCredsHeader}>
+                  <div className={styles.botCredsTitle} style={{ color: '#34d399' }}>
+                    <CheckCircle2 size={18} />
+                    Status Kredensial Administratif &amp; Autentikasi
+                  </div>
+                  <span className={styles.botCredsBadge} style={{ background: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid #34d399' }}>
+                    0 Kredensial Terpapar
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: 0 }}>
+                  Hasil pengujian brute-force dan audit kebocoran mengonfirmasi tidak ada kata sandi default atau rahasia administratif yang berhasil dibobol pada target ini.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
