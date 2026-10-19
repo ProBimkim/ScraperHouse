@@ -82,6 +82,7 @@ export async function POST(req) {
               executiveSummary: scanOutput.executiveSummary,
               recon: scanOutput.recon,
               vulnerabilities: scanOutput.vulnerabilities,
+              vulnerabilityStressImpact: scanOutput.vulnerabilityStressImpact,
               sarif: scanOutput.sarif,
               status: 'completed',
             });

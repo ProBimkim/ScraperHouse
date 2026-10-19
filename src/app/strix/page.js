@@ -50,6 +50,7 @@ import {
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import StressReportView from '@/components/strix/StressReportView';
 import ChaosMeshSuiteView from '@/components/strix/ChaosMeshSuiteView';
+import VulnerabilityStressImpactCard from '@/components/strix/VulnerabilityStressImpactCard';
 
 
 export default function StrixPentestPage() {
@@ -544,6 +545,29 @@ export default function StrixPentestPage() {
       }
       md += `---\n\n`;
     });
+
+    if (scanResult.vulnerabilityStressImpact) {
+      const imp = scanResult.vulnerabilityStressImpact;
+      md += `## Evaluasi Dampak Beban & Risiko DoS Celah (Stress Engine Cooperation)\n\n`;
+      md += `**Tingkat Risiko DoS:** ${imp.blastRadius?.overallDosRisk}\n`;
+      md += `**Maksimum Inflasi Latensi:** ${imp.blastRadius?.maxLatencyInflation}\n`;
+      md += `**Kesimpulan Evaluasi:** ${imp.blastRadius?.conclusions}\n\n`;
+      (imp.vulnerableEndpoints || []).forEach((ep) => {
+        md += `### Celah: [${ep.method}] ${ep.path} (${ep.title})\n`;
+        md += `- **Latensi Baseline Web:** ${ep.comparison?.baselineAvgLatency}ms (Error: ${ep.comparison?.baselineErrorRate}%)\n`;
+        md += `- **Latensi Endpoint Celah:** ${ep.comparison?.vulnerableAvgLatency}ms (Error: ${ep.comparison?.vulnerableErrorRate}%)\n`;
+        md += `- **Amplifikasi Beban:** ${ep.comparison?.latencyMultiplier}x lipat lebih lambat\n`;
+        md += `- **Tingkat Risiko DoS:** ${ep.comparison?.dosVulnerabilityRisk}\n`;
+        md += `- **Analisis:** ${ep.comparison?.impactDescription}\n\n`;
+      });
+      if (imp.blastRadius?.developerActionItems?.length) {
+        md += `### Checklist Developer: Mitigasi Dampak Beban\n\n`;
+        imp.blastRadius.developerActionItems.forEach((act) => {
+          md += `- ${act}\n`;
+        });
+        md += `\n`;
+      }
+    }
 
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -1184,6 +1208,11 @@ export default function StrixPentestPage() {
                 </div>
               </div>
             </div>
+
+            {/* Strix Pentest + Stress Engine Cooperative Impact Card */}
+            {scanResult.vulnerabilityStressImpact && (
+              <VulnerabilityStressImpactCard impact={scanResult.vulnerabilityStressImpact} />
+            )}
 
             {/* Executive Summary */}
             {scanResult.executiveSummary && (

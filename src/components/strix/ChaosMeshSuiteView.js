@@ -304,7 +304,7 @@ export default function ChaosMeshSuiteView() {
             <div className={styles.archDomainK8s}>
               <div className={styles.domainTitle} style={{ color: '#60a5fa' }}>
                 <Server size={16} />
-                Chaos Mesh Service (Kubernetes Environment: namespace "{namespace}")
+                Chaos Mesh Service (Kubernetes Environment: namespace &quot;{namespace}&quot;)
               </div>
 
               {/* Service Control Layer */}

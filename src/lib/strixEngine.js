@@ -4,6 +4,7 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import nodeFetch from 'node-fetch';
+import { runVulnerabilityStressCooperation } from '@/lib/stressEngine';
 import { 
   parseGitHubUrl, 
   fetchRepoMetadata, 
@@ -2628,15 +2629,37 @@ proxy_hide_header Server;
   // Recalculate summary metrics
   const summary = calculateRiskSummary(rawVulns, effectiveRecon);
 
+  // Cooperative Pentest + Stress Impact Analysis
+  let vulnerabilityStressImpact = null;
+  if (targetType === 'url') {
+    try {
+      vulnerabilityStressImpact = await runVulnerabilityStressCooperation({
+        targetUrl: target,
+        vulnerabilities: rawVulns,
+        recon: effectiveRecon,
+        options: { requestsPerTarget: 40, concurrency: 8 },
+        onProgress,
+      });
+    } catch (stressErr) {
+      console.warn('Vulnerability stress cooperation error:', stressErr.message);
+    }
+  }
+
+  let finalExecutiveSummary = parsedOutput.executiveSummary || 'Penetration test concluded. See findings below.';
+  if (vulnerabilityStressImpact?.blastRadius?.conclusions) {
+    finalExecutiveSummary += `\n\n[Analisis Dampak Beban & DoS (Stress Cooperation)]: ${vulnerabilityStressImpact.blastRadius.conclusions} Latensi asimetris maksimum: ${vulnerabilityStressImpact.blastRadius.maxLatencyInflation}.`;
+  }
+
   const finalResult = {
     targetType,
     target,
     scanMode,
     instruction,
     summary,
-    executiveSummary: parsedOutput.executiveSummary || 'Penetration test concluded. See findings below.',
+    executiveSummary: finalExecutiveSummary,
     recon: effectiveRecon,
     vulnerabilities: rawVulns,
+    vulnerabilityStressImpact,
     sarif: null,
   };
 

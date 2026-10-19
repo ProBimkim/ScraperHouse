@@ -175,6 +175,9 @@ const SecurityScanResultSchema = new mongoose.Schema({
   // Load / Stress testing output
   stressResult: { type: mongoose.Schema.Types.Mixed, default: null },
 
+  // Cooperative Pentest + Stress Impact output
+  vulnerabilityStressImpact: { type: mongoose.Schema.Types.Mixed, default: null },
+
   // SARIF 2.1.0 output
   sarif: { type: mongoose.Schema.Types.Mixed, default: null },
 

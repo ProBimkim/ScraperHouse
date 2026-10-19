@@ -859,3 +859,246 @@ ${prometheusAbortRuleYaml}
     cliSteps,
   };
 }
+
+/**
+ * Cooperative Integration: Strix Pentest + Stress Engine
+ * Tests the main web target AND discovered vulnerable endpoints under load
+ * to calculate real-world blast radius, latency inflation, and Asymmetric DoS vulnerability risk.
+ */
+export async function runVulnerabilityStressCooperation({
+  targetUrl,
+  vulnerabilities = [],
+  recon = {},
+  options = {},
+  onProgress = () => {},
+}) {
+  const requestsPerTarget = Number(options.requestsPerTarget) || 40;
+  const concurrency = Number(options.concurrency) || 8;
+  const timeoutMs = Number(options.timeoutMs) || 7000;
+
+  // 1. Identify candidate vulnerable endpoints
+  const endpointsToTest = [];
+  const baseUrl = (targetUrl || '').replace(/\/+$/, '');
+
+  // Extract endpoints from vulnerabilities
+  for (const v of vulnerabilities) {
+    if (v.endpoint && typeof v.endpoint === 'string' && v.endpoint !== '/' && v.endpoint !== baseUrl) {
+      let fullUrl = v.endpoint;
+      if (v.endpoint.startsWith('http://') || v.endpoint.startsWith('https://')) {
+        fullUrl = v.endpoint;
+      } else {
+        const cleanPath = v.endpoint.startsWith('/') ? v.endpoint : `/${v.endpoint}`;
+        fullUrl = `${baseUrl}${cleanPath}`;
+      }
+
+      if (!endpointsToTest.some(e => e.url === fullUrl)) {
+        endpointsToTest.push({
+          url: fullUrl,
+          path: v.endpoint,
+          vulnerabilityId: v.id || 'VULN',
+          title: v.title || 'Discovered Vulnerability',
+          severity: v.severity || 'high',
+          method: v.method || 'GET',
+          type: 'vulnerability-endpoint'
+        });
+      }
+    }
+    if (endpointsToTest.length >= 3) break;
+  }
+
+  // Also check discovered admin/exposed endpoints from recon
+  if (endpointsToTest.length < 3 && recon.adminEndpoints?.length > 0) {
+    for (const adm of recon.adminEndpoints) {
+      const fullUrl = `${baseUrl}${adm.path.startsWith('/') ? adm.path : `/${adm.path}`}`;
+      if (!endpointsToTest.some(e => e.url === fullUrl)) {
+        endpointsToTest.push({
+          url: fullUrl,
+          path: adm.path,
+          vulnerabilityId: 'RECON-ADMIN-EXPOSURE',
+          title: `Exposed Administrative Interface (${adm.path})`,
+          severity: adm.accessible ? 'critical' : 'medium',
+          method: 'GET',
+          type: 'recon-exposed-interface'
+        });
+      }
+      if (endpointsToTest.length >= 3) break;
+    }
+  }
+
+  // Also check login endpoints
+  if (endpointsToTest.length < 3 && recon.loginEndpoints?.length > 0) {
+    for (const l of recon.loginEndpoints) {
+      const fullUrl = `${baseUrl}${l.path.startsWith('/') ? l.path : `/${l.path}`}`;
+      if (!endpointsToTest.some(e => e.url === fullUrl)) {
+        endpointsToTest.push({
+          url: fullUrl,
+          path: l.path,
+          vulnerabilityId: 'RECON-LOGIN-AUTH',
+          title: `Authentication Entrypoint (${l.path})`,
+          severity: 'medium',
+          method: 'POST',
+          type: 'recon-auth-entrypoint'
+        });
+      }
+      if (endpointsToTest.length >= 3) break;
+    }
+  }
+
+  onProgress({
+    phase: 'stress-cooperation',
+    message: `Menjalankan Stress Impact Test: Menguji web utama (${baseUrl}) dan ${endpointsToTest.length} celah teridentifikasi...`,
+    progress: 75
+  });
+
+  // 2. Run Baseline Stress Test on Main Web Target
+  let baselineResult = null;
+  try {
+    baselineResult = await runServerStressTest({
+      targetUrl: baseUrl,
+      method: 'GET',
+      totalRequests: requestsPerTarget,
+      concurrency,
+      intervalMs: 0,
+      timeoutMs,
+      useRotatingProxy: false,
+      onProgress: () => {},
+    });
+  } catch (err) {
+    baselineResult = {
+      targetUrl: baseUrl,
+      avgRps: 0,
+      latency: { avg: 9999, p95: 9999 },
+      failedCount: requestsPerTarget,
+      successfulCount: 0,
+      statusCodes: { error: requestsPerTarget },
+      error: err.message,
+    };
+  }
+
+  // 3. Run Targeted Stress Test on Discovered Vulnerable Endpoints
+  const vulnerableEndpointResults = [];
+  for (let i = 0; i < endpointsToTest.length; i++) {
+    const ep = endpointsToTest[i];
+    onProgress({
+      phase: 'stress-cooperation',
+      message: `Menguji dampak beban pada celah [${i + 1}/${endpointsToTest.length}]: ${ep.path} (${ep.title})...`,
+      progress: Math.round(75 + ((i + 1) / (endpointsToTest.length + 1)) * 18),
+    });
+
+    let epResult = null;
+    try {
+      epResult = await runServerStressTest({
+        targetUrl: ep.url,
+        method: ep.method || 'GET',
+        totalRequests: requestsPerTarget,
+        concurrency,
+        intervalMs: 0,
+        timeoutMs,
+        useRotatingProxy: false,
+        onProgress: () => {},
+      });
+    } catch (err) {
+      epResult = {
+        targetUrl: ep.url,
+        avgRps: 0,
+        latency: { avg: 9999, p95: 9999 },
+        failedCount: requestsPerTarget,
+        successfulCount: 0,
+        statusCodes: { error: requestsPerTarget },
+        error: err.message,
+      };
+    }
+
+    // Impact analysis for this endpoint
+    const baselineLat = baselineResult.latency?.avg || 100;
+    const epLat = epResult.latency?.avg || 100;
+    const latencyMultiplier = Number((epLat / Math.max(baselineLat, 1)).toFixed(2));
+    const epErrorRate = Number(((epResult.failedCount / Math.max(epResult.completedTotal || requestsPerTarget, 1)) * 100).toFixed(1));
+    const baselineErrorRate = Number(((baselineResult.failedCount / Math.max(baselineResult.completedTotal || requestsPerTarget, 1)) * 100).toFixed(1));
+
+    let dosVulnerabilityRisk = 'LOW';
+    let impactDescription = '';
+
+    if (epErrorRate >= 35 || latencyMultiplier >= 3.5) {
+      dosVulnerabilityRisk = 'CRITICAL';
+      if (latencyMultiplier >= 2.0 && epErrorRate >= 20) {
+        impactDescription = `Sangat Berbahaya (Critical DoS Vector). Menembakkan beban pada endpoint celah ini menyebabkan lonjakan respon ${latencyMultiplier}x lipat lebih lambat dibandingkan web utama, dengan tingkat kegagalan ${epErrorRate}%. Celah ini rentan dieksploitasi untuk melumpuhkan server (Asymmetric Denial of Service).`;
+      } else if (latencyMultiplier >= 2.0) {
+        impactDescription = `Sangat Berbahaya (Severe Latency Spike). Menembakkan beban pada endpoint celah ini menyebabkan server merespon ${latencyMultiplier}x lipat lebih lambat dibandingkan web utama. Berpotensi menguras pool worker backend.`;
+      } else {
+        impactDescription = `Sangat Berbahaya (High Failure Rate). Endpoint celah menghasilkan tingkat error ${epErrorRate}% di bawah beban trafik, mengindikasikan server gagal menangani request concurrent pada jalur ini (Crash / Connection Timeout).`;
+      }
+    } else if (epErrorRate >= 15 || latencyMultiplier >= 2.0) {
+      dosVulnerabilityRisk = 'HIGH';
+      impactDescription = `Beban Tinggi (High Resource Consumption). Respon ${latencyMultiplier}x lebih lambat atau error rate ${epErrorRate}%. Lonjakan trafik pada celah ini dapat menguras connection pool database atau CPU server.`;
+    } else if (latencyMultiplier >= 1.3 || epErrorRate > baselineErrorRate) {
+      dosVulnerabilityRisk = 'MODERATE';
+      impactDescription = `Degradasi Sedang. Endpoint celah memiliki latensi ${latencyMultiplier}x lipat dari halaman utama (${epLat}ms vs ${baselineLat}ms) saat dibebani trafik bersamaan.`;
+    } else {
+      dosVulnerabilityRisk = 'LOW';
+      impactDescription = `Respon Stabil. Celah tidak menimbulkan lonjakan latensi asimetris ekstrem di bawah beban ${requestsPerTarget} request (Latensi: ${epLat}ms vs Baseline: ${baselineLat}ms).`;
+    }
+
+    vulnerableEndpointResults.push({
+      ...ep,
+      stressMetrics: {
+        completedTotal: epResult.completedTotal || requestsPerTarget,
+        successfulCount: epResult.successfulCount || 0,
+        failedCount: epResult.failedCount || 0,
+        avgRps: epResult.avgRps || 0,
+        latency: epResult.latency || { avg: 0, min: 0, max: 0, p95: 0 },
+        statusCodes: epResult.statusCodes || {},
+      },
+      comparison: {
+        baselineAvgLatency: baselineLat,
+        vulnerableAvgLatency: epLat,
+        latencyMultiplier,
+        baselineErrorRate,
+        vulnerableErrorRate: epErrorRate,
+        dosVulnerabilityRisk,
+        impactDescription,
+      }
+    });
+  }
+
+  // 4. Synthesize Overall Blast Radius
+  const hasCriticalDos = vulnerableEndpointResults.some(r => r.comparison.dosVulnerabilityRisk === 'CRITICAL');
+  const hasHighDos = vulnerableEndpointResults.some(r => r.comparison.dosVulnerabilityRisk === 'HIGH');
+  const maxMultiplier = vulnerableEndpointResults.length > 0 
+    ? Math.max(...vulnerableEndpointResults.map(r => r.comparison.latencyMultiplier)) 
+    : 1.0;
+
+  const overallDosRisk = hasCriticalDos ? 'CRITICAL' : hasHighDos ? 'HIGH' : vulnerableEndpointResults.length > 0 ? 'MODERATE' : 'LOW';
+
+  const blastRadiusAssessment = {
+    overallDosRisk,
+    maxLatencyInflation: `${maxMultiplier}x`,
+    baselineSummary: {
+      url: baseUrl,
+      avgLatency: baselineResult.latency?.avg || 0,
+      avgRps: baselineResult.avgRps || 0,
+      successRate: `${(100 - (baselineResult.failedCount / Math.max(baselineResult.completedTotal || 1, 1)) * 100).toFixed(1)}%`,
+    },
+    testedVulnerabilitiesCount: vulnerableEndpointResults.length,
+    conclusions: hasCriticalDos
+      ? 'PERINGATAN KRITIS: Ditemukan celah yang dapat dimanfaatkan untuk Asymmetric Denial-of-Service (DoS). Penyerang dapat membuat server database atau backend lumpuh tanpa memerlukan bandwidth tinggi.'
+      : hasHighDos
+      ? 'PERINGATAN TINGGI: Celah yang ditemukan memiliki konsumsi komputasi/database asimetris yang signifikan. Beban berulang pada celah ini dapat menurunkan performa seluruh website.'
+      : 'EVALUASI BEBAN: Celah yang ditemukan memiliki karakteristik respon sebanding dengan web utama, namun tetap memerlukan proteksi rate limit dan input validation.',
+    developerActionItems: [
+      'Terapkan Rate Limiting ketat per-IP dan per-Akun pada endpoint yang teridentifikasi rentan.',
+      'Gunakan query timeout batas maksimal (misal: 3-5 detik) pada database agar query berat akibat eksploitasi tidak menahan connection pool.',
+      'Terapkan Redis caching pada response endpoint yang sering dieksplorasi berulang kali.',
+      'Pisahkan thread pool atau autoscaling pod backend untuk jalur publik dan jalur sensitif/administratif.'
+    ],
+  };
+
+  return {
+    executed: true,
+    testedAt: new Date().toISOString(),
+    baseline: baselineResult,
+    vulnerableEndpoints: vulnerableEndpointResults,
+    blastRadius: blastRadiusAssessment,
+  };
+}
+
