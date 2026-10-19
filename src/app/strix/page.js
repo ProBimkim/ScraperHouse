@@ -51,6 +51,7 @@ import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import StressReportView from '@/components/strix/StressReportView';
 import ChaosMeshSuiteView from '@/components/strix/ChaosMeshSuiteView';
 import VulnerabilityStressImpactCard from '@/components/strix/VulnerabilityStressImpactCard';
+import AccountTakeoverAssessmentCard from '@/components/strix/AccountTakeoverAssessmentCard';
 
 
 export default function StrixPentestPage() {
@@ -564,6 +565,37 @@ export default function StrixPentestPage() {
         md += `### Checklist Developer: Mitigasi Dampak Beban\n\n`;
         imp.blastRadius.developerActionItems.forEach((act) => {
           md += `- ${act}\n`;
+        });
+        md += `\n`;
+      }
+    }
+
+    if (scanResult.accountTakeoverAssessment) {
+      const ato = scanResult.accountTakeoverAssessment;
+      md += `## Audit Keamanan: Ketahanan Autentikasi & Account Takeover (ATO Assessment)\n\n`;
+      md += `**Tingkat Risiko ATO:** ${ato.overallAtoRisk}\n`;
+      md += `**Endpoint Target:** ${ato.targetUrl}\n`;
+      md += `**Ringkasan:** ${ato.executiveSummary}\n\n`;
+
+      md += `### Perbandingan Vektor Ancaman (Brute-Force vs. Credential Stuffing)\n\n`;
+      md += `| Parameter | Brute-Force | Credential Stuffing | Konteks Teknis |\n`;
+      md += `|---|---|---|---|\n`;
+      (ato.threatComparisonMatrix || []).forEach((c) => {
+        md += `| ${c.parameter} | ${c.bruteForce} | ${c.credentialStuffing} | ${c.technicalContext} |\n`;
+      });
+      md += `\n`;
+
+      md += `### Evaluasi Mekanisme Proteksi Autentikasi\n\n`;
+      md += `- **Pembatasan Laju Akses (Single-IP):** ${ato.rateLimitingEvaluation?.singleIpThreshold}\n`;
+      md += `- **Ketahanan Evasion Terdistribusi (Multi-IP/Proxy):** ${ato.rateLimitingEvaluation?.wafDistributedDetection}\n`;
+      md += `- **Pertahanan Bot & CAPTCHA:** ${ato.botProtectionEvaluation?.captchaProvider} (${ato.botProtectionEvaluation?.challengeResponseMechanism})\n`;
+      md += `- **Username Enumeration (CWE-204):** ${ato.responseAnalysis?.enumerationVector} (Timing Delta: ${ato.responseAnalysis?.timingDiscrepancyMs}ms)\n`;
+      md += `- **Analisis Respon:** ${ato.responseAnalysis?.analysisConclusion}\n\n`;
+
+      if (ato.developerRemediationPlan?.length) {
+        md += `### Checklist Tim Pengembang: Mitigasi ATO & Autentikasi\n\n`;
+        ato.developerRemediationPlan.forEach((r) => {
+          md += `- **[${r.priority}] ${r.action}:** ${r.details}\n`;
         });
         md += `\n`;
       }
@@ -1212,6 +1244,11 @@ export default function StrixPentestPage() {
             {/* Strix Pentest + Stress Engine Cooperative Impact Card */}
             {scanResult.vulnerabilityStressImpact && (
               <VulnerabilityStressImpactCard impact={scanResult.vulnerabilityStressImpact} />
+            )}
+
+            {/* Account Takeover (ATO) Resilience Assessment Card */}
+            {scanResult.accountTakeoverAssessment && (
+              <AccountTakeoverAssessmentCard assessment={scanResult.accountTakeoverAssessment} />
             )}
 
             {/* Executive Summary */}

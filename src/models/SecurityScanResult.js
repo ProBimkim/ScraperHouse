@@ -178,6 +178,9 @@ const SecurityScanResultSchema = new mongoose.Schema({
   // Cooperative Pentest + Stress Impact output
   vulnerabilityStressImpact: { type: mongoose.Schema.Types.Mixed, default: null },
 
+  // Account Takeover (ATO) Resilience Assessment output
+  accountTakeoverAssessment: { type: mongoose.Schema.Types.Mixed, default: null },
+
   // SARIF 2.1.0 output
   sarif: { type: mongoose.Schema.Types.Mixed, default: null },
 

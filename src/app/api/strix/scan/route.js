@@ -83,6 +83,7 @@ export async function POST(req) {
               recon: scanOutput.recon,
               vulnerabilities: scanOutput.vulnerabilities,
               vulnerabilityStressImpact: scanOutput.vulnerabilityStressImpact,
+              accountTakeoverAssessment: scanOutput.accountTakeoverAssessment,
               sarif: scanOutput.sarif,
               status: 'completed',
             });

@@ -5,6 +5,7 @@ import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import nodeFetch from 'node-fetch';
 import { runVulnerabilityStressCooperation } from '@/lib/stressEngine';
+import { runAccountTakeoverAssessment } from '@/lib/accountTakeoverAssessment';
 import { 
   parseGitHubUrl, 
   fetchRepoMetadata, 
@@ -2626,6 +2627,62 @@ proxy_hide_header Server;
     };
   }
 
+  // Account Takeover (ATO) Resilience Assessment
+  let accountTakeoverAssessment = null;
+  if (targetType === 'url') {
+    try {
+      accountTakeoverAssessment = await runAccountTakeoverAssessment({
+        targetUrl: target,
+        loginEndpoints: effectiveRecon?.loginEndpoints || [],
+        formHtml: '',
+        options: {},
+        onProgress,
+      });
+
+      // Inject discovered ATO vulnerabilities into raw findings
+      if (accountTakeoverAssessment?.apiVulnerabilityVectors?.length > 0) {
+        for (const vec of accountTakeoverAssessment.apiVulnerabilityVectors) {
+          if (!rawVulns.some(v => v.title.includes(vec.vector))) {
+            rawVulns.push({
+              id: `ATO-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+              title: `Account Takeover Risk: ${vec.vector}`,
+              severity: vec.severity.toLowerCase(),
+              owaspCategory: 'A07:2025-Authentication & Identification Failures',
+              cwe: 'CWE-307: Improper Restriction of Excessive Authentication Attempts',
+              cvss: vec.severity === 'HIGH' ? 8.2 : 6.5,
+              endpoint: accountTakeoverAssessment.targetUrl,
+              description: vec.description,
+              impact: 'Potensi pengambilalihan akun pengguna (Account Takeover) melalui eksploitasi kebocoran kredensial (credential stuffing), otomasi brute force terdistribusi, atau celah pada endpoint API pendukung.',
+              remediation: 'Terapkan MFA (2FA), rate limiting global terpusat dengan Redis sliding-window, challenge bot CAPTCHA, dan keseragaman respon error autentikasi.',
+              remediationPatch: `// Contoh Mitigasi Rate Limiting & Account Lockout
+const rateLimit = require('express-rate-limit');
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 menit
+  max: 5, // Maksimal 5 percobaan gagal
+  message: { error: 'Terlalu banyak percobaan login, silakan coba lagi dalam 15 menit.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1/auth/login', loginLimiter);`,
+              pocScriptCode: `# Proof-of-Concept ATO Evaluation Probe
+import requests
+
+target = "${accountTakeoverAssessment.targetUrl}"
+headers = {"X-Forwarded-For": "198.51.100.12", "User-Agent": "ATO-Probe/1.0"}
+payload = {"username": "admin", "password": "DummyPassword123!"}
+
+response = requests.post(target, json=payload, headers=headers)
+print(f"Status Code: {response.status_code}")
+print(f"Server Response: {response.text[:200]}")`
+            });
+          }
+        }
+      }
+    } catch (atoErr) {
+      console.warn('Account Takeover assessment error:', atoErr.message);
+    }
+  }
+
   // Recalculate summary metrics
   const summary = calculateRiskSummary(rawVulns, effectiveRecon);
 
@@ -2646,6 +2703,9 @@ proxy_hide_header Server;
   }
 
   let finalExecutiveSummary = parsedOutput.executiveSummary || 'Penetration test concluded. See findings below.';
+  if (accountTakeoverAssessment?.executiveSummary) {
+    finalExecutiveSummary += `\n\n[Audit Ketahanan Autentikasi (ATO Assessment)]: ${accountTakeoverAssessment.executiveSummary} (Tingkat Risiko: ${accountTakeoverAssessment.overallAtoRisk}).`;
+  }
   if (vulnerabilityStressImpact?.blastRadius?.conclusions) {
     finalExecutiveSummary += `\n\n[Analisis Dampak Beban & DoS (Stress Cooperation)]: ${vulnerabilityStressImpact.blastRadius.conclusions} Latensi asimetris maksimum: ${vulnerabilityStressImpact.blastRadius.maxLatencyInflation}.`;
   }
@@ -2660,6 +2720,7 @@ proxy_hide_header Server;
     recon: effectiveRecon,
     vulnerabilities: rawVulns,
     vulnerabilityStressImpact,
+    accountTakeoverAssessment,
     sarif: null,
   };
 
