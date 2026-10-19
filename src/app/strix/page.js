@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import DeleteConfirmModal from '@/components/DeleteConfirmModal';
 import StressReportView from '@/components/strix/StressReportView';
+import ChaosMeshSuiteView from '@/components/strix/ChaosMeshSuiteView';
 
 
 export default function StrixPentestPage() {
@@ -58,6 +59,7 @@ export default function StrixPentestPage() {
   const [codeSnippet, setCodeSnippet] = useState('');
   
   // Stress Testing state (configurable traffic volume without upper limit)
+  const [stressEngineMode, setStressEngineMode] = useState('direct'); // 'direct' | 'chaos-k8s'
   const [stressUrl, setStressUrl] = useState('');
   const [stressVolume, setStressVolume] = useState('500'); // Unbounded, default 500
   const [stressConcurrency, setStressConcurrency] = useState('20');
@@ -628,153 +630,205 @@ export default function StrixPentestPage() {
           <form onSubmit={handleStartScan}>
             {activeTab === 'stress' ? (
               <div>
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>
-                    Target Server URL / Endpoint untuk Stress Test
-                  </label>
-                  <div className={styles.inputWrapper}>
-                    <Activity size={20} className={styles.inputIcon} />
-                    <input
-                      type="text"
-                      className={styles.textInput}
-                      placeholder="https://example.com/api/test atau https://staging.myapp.com"
-                      value={stressUrl}
-                      onChange={(e) => setStressUrl(e.target.value)}
-                      disabled={isScanning}
-                    />
+                {/* Engine Mode Switcher: Direct HTTP vs Distributed K8s & Chaos Mesh */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(15, 23, 42, 0.7)', border: '1px solid var(--border)', borderRadius: '12px', padding: '12px 18px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    <Activity size={18} style={{ color: '#f59e0b' }} />
+                    Mode Engine Pengujian Beban:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', background: 'rgba(0,0,0,0.35)', padding: '4px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <button
+                      type="button"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: stressEngineMode === 'direct' ? 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' : 'transparent',
+                        color: stressEngineMode === 'direct' ? '#ffffff' : 'var(--text-muted)',
+                        boxShadow: stressEngineMode === 'direct' ? '0 2px 10px rgba(239, 68, 68, 0.3)' : 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onClick={() => setStressEngineMode('direct')}
+                    >
+                      🚀 Real-time HTTP Stress (In-App)
+                    </button>
+                    <button
+                      type="button"
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '6px',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: stressEngineMode === 'chaos-k8s' ? 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)' : 'transparent',
+                        color: stressEngineMode === 'chaos-k8s' ? '#ffffff' : 'var(--text-muted)',
+                        boxShadow: stressEngineMode === 'chaos-k8s' ? '0 2px 10px rgba(239, 68, 68, 0.3)' : 'none',
+                        transition: 'all 0.2s'
+                      }}
+                      onClick={() => setStressEngineMode('chaos-k8s')}
+                    >
+                      ⚡ Distributed K8s &amp; Chaos Mesh Suite
+                    </button>
                   </div>
                 </div>
 
-                {/* Config Grid: Volume, Concurrency, Interval, Method, Timeout */}
-                <div className={styles.stressConfigGrid}>
-                  <div>
-                    <label className={styles.formLabel}>
-                      Volume Trafik Total (Jumlah Permintaan - Tanpa Batas Maksimum)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      className={styles.textInput}
-                      style={{ paddingLeft: '14px', fontWeight: 600 }}
-                      placeholder="e.g. 500, 5000, 50000, 100000..."
-                      value={stressVolume}
-                      onChange={(e) => setStressVolume(e.target.value)}
-                      disabled={isScanning}
-                    />
-                    <div className={styles.presetRow}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preset Cepat:</span>
-                      {['200', '500', '1000', '5000', '10000', '25000', '50000', '100000'].map((vol) => (
-                        <button
-                          key={vol}
-                          type="button"
-                          className={`${styles.presetPill} ${stressVolume === vol ? styles.presetPillActive : ''}`}
-                          onClick={() => setStressVolume(vol)}
+                {stressEngineMode === 'chaos-k8s' ? (
+                  <ChaosMeshSuiteView />
+                ) : (
+                  <>
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>
+                        Target Server URL / Endpoint untuk Stress Test
+                      </label>
+                      <div className={styles.inputWrapper}>
+                        <Activity size={20} className={styles.inputIcon} />
+                        <input
+                          type="text"
+                          className={styles.textInput}
+                          placeholder="https://example.com/api/test atau https://staging.myapp.com"
+                          value={stressUrl}
+                          onChange={(e) => setStressUrl(e.target.value)}
+                          disabled={isScanning}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Config Grid: Volume, Concurrency, Interval, Method, Timeout */}
+                    <div className={styles.stressConfigGrid}>
+                      <div>
+                        <label className={styles.formLabel}>
+                          Volume Trafik Total (Jumlah Permintaan - Tanpa Batas Maksimum)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          className={styles.textInput}
+                          style={{ paddingLeft: '14px', fontWeight: 600 }}
+                          placeholder="e.g. 500, 5000, 50000, 100000..."
+                          value={stressVolume}
+                          onChange={(e) => setStressVolume(e.target.value)}
+                          disabled={isScanning}
+                        />
+                        <div className={styles.presetRow}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preset Cepat:</span>
+                          {['200', '500', '1000', '5000', '10000', '25000', '50000', '100000'].map((vol) => (
+                            <button
+                              key={vol}
+                              type="button"
+                              className={`${styles.presetPill} ${stressVolume === vol ? styles.presetPillActive : ''}`}
+                              onClick={() => setStressVolume(vol)}
+                              disabled={isScanning}
+                            >
+                              {Number(vol) >= 1000 ? `${Number(vol) / 1000}k` : vol}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={styles.formLabel}>
+                          Concurrency (Virtual Users / CCU Bersamaan)
+                        </label>
+                        <select
+                          className={styles.selectInput}
+                          value={stressConcurrency}
+                          onChange={(e) => setStressConcurrency(e.target.value)}
                           disabled={isScanning}
                         >
-                          {Number(vol) >= 1000 ? `${Number(vol) / 1000}k` : vol}
-                        </button>
-                      ))}
+                          <option value="5">5 CCU (Ringan / Dev Local)</option>
+                          <option value="10">10 CCU (Beban Normal)</option>
+                          <option value="20">20 CCU (Menengah - Rekomendasi Awal)</option>
+                          <option value="50">50 CCU (Tinggi)</option>
+                          <option value="100">100 CCU (Sangat Tinggi)</option>
+                          <option value="200">200 CCU (Extreme Stress)</option>
+                          <option value="500">500 CCU (Ultra Peak)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className={styles.formLabel}>
+                          Jeda Antar Request (Simulasi Kunjungan Pengguna Berkala)
+                        </label>
+                        <select
+                          className={styles.selectInput}
+                          value={stressInterval}
+                          onChange={(e) => setStressInterval(e.target.value)}
+                          disabled={isScanning}
+                        >
+                          <option value="0">0 ms (Full Flood / Maksimum Throughput Langsung)</option>
+                          <option value="25">25 ms (Kunjungan Cepat / Peak Traffic)</option>
+                          <option value="50">50 ms (Simulasi Pengguna Aktif Normal)</option>
+                          <option value="100">100 ms (Kunjungan Berkala Sedang)</option>
+                          <option value="250">250 ms (Simulasi Santai / Browsing Organik)</option>
+                          <option value="500">500 ms (Simulasi Kunjungan Ringan Berkala)</option>
+                          <option value="1000">1000 ms (1 Detik Sekali per Pengguna)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className={styles.formLabel}>HTTP Method</label>
+                        <select
+                          className={styles.selectInput}
+                          value={stressMethod}
+                          onChange={(e) => setStressMethod(e.target.value)}
+                          disabled={isScanning}
+                        >
+                          <option value="GET">GET (Ambil Halaman / API Data)</option>
+                          <option value="POST">POST (Simulasi Kirim Form / Submit API)</option>
+                          <option value="HEAD">HEAD (Hanya Cek Header Server)</option>
+                          <option value="PUT">PUT (Update Resource)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className={styles.formLabel}>Timeout per Request (ms)</label>
+                        <select
+                          className={styles.selectInput}
+                          value={stressTimeout}
+                          onChange={(e) => setStressTimeout(e.target.value)}
+                          disabled={isScanning}
+                        >
+                          <option value="5000">5.000 ms (5 Detik - Respon Cepat)</option>
+                          <option value="10000">10.000 ms (10 Detik - Standar)</option>
+                          <option value="15000">15.000 ms (15 Detik)</option>
+                          <option value="30000">30.000 ms (30 Detik - Long Wait)</option>
+                        </select>
+                      </div>
+
+                      <div className={styles.proxyToggleBox}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                          <input
+                            type="checkbox"
+                            checked={stressUseProxy}
+                            onChange={(e) => setStressUseProxy(e.target.checked)}
+                            disabled={isScanning}
+                          />
+                          <span>Gunakan IP Rotating Proxy</span>
+                        </label>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Rotasi IP dari pool proxy publik agar simulasi berasal dari berbagai IP berbeda (mencegah blokir rate-limiter per-IP).
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label className={styles.formLabel}>
-                      Concurrency (Virtual Users / CCU Bersamaan)
-                    </label>
-                    <select
-                      className={styles.selectInput}
-                      value={stressConcurrency}
-                      onChange={(e) => setStressConcurrency(e.target.value)}
-                      disabled={isScanning}
-                    >
-                      <option value="5">5 CCU (Ringan / Dev Local)</option>
-                      <option value="10">10 CCU (Beban Normal)</option>
-                      <option value="20">20 CCU (Menengah - Rekomendasi Awal)</option>
-                      <option value="50">50 CCU (Tinggi)</option>
-                      <option value="100">100 CCU (Sangat Tinggi)</option>
-                      <option value="200">200 CCU (Extreme Stress)</option>
-                      <option value="500">500 CCU (Ultra Peak)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className={styles.formLabel}>
-                      Jeda Antar Request (Simulasi Kunjungan Pengguna Berkala)
-                    </label>
-                    <select
-                      className={styles.selectInput}
-                      value={stressInterval}
-                      onChange={(e) => setStressInterval(e.target.value)}
-                      disabled={isScanning}
-                    >
-                      <option value="0">0 ms (Full Flood / Maksimum Throughput Langsung)</option>
-                      <option value="25">25 ms (Kunjungan Cepat / Peak Traffic)</option>
-                      <option value="50">50 ms (Simulasi Pengguna Aktif Normal)</option>
-                      <option value="100">100 ms (Kunjungan Berkala Sedang)</option>
-                      <option value="250">250 ms (Simulasi Santai / Browsing Organik)</option>
-                      <option value="500">500 ms (Simulasi Kunjungan Ringan Berkala)</option>
-                      <option value="1000">1000 ms (1 Detik Sekali per Pengguna)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className={styles.formLabel}>HTTP Method</label>
-                    <select
-                      className={styles.selectInput}
-                      value={stressMethod}
-                      onChange={(e) => setStressMethod(e.target.value)}
-                      disabled={isScanning}
-                    >
-                      <option value="GET">GET (Ambil Halaman / API Data)</option>
-                      <option value="POST">POST (Simulasi Kirim Form / Submit API)</option>
-                      <option value="HEAD">HEAD (Hanya Cek Header Server)</option>
-                      <option value="PUT">PUT (Update Resource)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className={styles.formLabel}>Timeout per Request (ms)</label>
-                    <select
-                      className={styles.selectInput}
-                      value={stressTimeout}
-                      onChange={(e) => setStressTimeout(e.target.value)}
-                      disabled={isScanning}
-                    >
-                      <option value="5000">5.000 ms (5 Detik - Respon Cepat)</option>
-                      <option value="10000">10.000 ms (10 Detik - Standar)</option>
-                      <option value="15000">15.000 ms (15 Detik)</option>
-                      <option value="30000">30.000 ms (30 Detik - Long Wait)</option>
-                    </select>
-                  </div>
-
-                  <div className={styles.proxyToggleBox}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                      <input
-                        type="checkbox"
-                        checked={stressUseProxy}
-                        onChange={(e) => setStressUseProxy(e.target.checked)}
-                        disabled={isScanning}
-                      />
-                      <span>Gunakan IP Rotating Proxy</span>
-                    </label>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Rotasi IP dari pool proxy publik agar simulasi berasal dari berbagai IP berbeda (mencegah blokir rate-limiter per-IP).
-                    </span>
-                  </div>
-                </div>
-
-                {(stressMethod === 'POST' || stressMethod === 'PUT') && (
-                  <div className={styles.formGroup} style={{ marginTop: '14px' }}>
-                    <label className={styles.formLabel}>Request Body (JSON / Raw Payload)</label>
-                    <textarea
-                      className={styles.codeTextarea}
-                      style={{ minHeight: '90px' }}
-                      placeholder='{"username": "stress_test_user", "action": "ping"}'
-                      value={stressRequestBody}
-                      onChange={(e) => setStressRequestBody(e.target.value)}
-                      disabled={isScanning}
-                    />
-                  </div>
+                    {(stressMethod === 'POST' || stressMethod === 'PUT') && (
+                      <div className={styles.formGroup} style={{ marginTop: '14px' }}>
+                        <label className={styles.formLabel}>Request Body (JSON / Raw Payload)</label>
+                        <textarea
+                          className={styles.codeTextarea}
+                          style={{ minHeight: '90px' }}
+                          placeholder='{"username": "stress_test_user", "action": "ping"}'
+                          value={stressRequestBody}
+                          onChange={(e) => setStressRequestBody(e.target.value)}
+                          disabled={isScanning}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : activeTab !== 'code' ? (
@@ -922,7 +976,12 @@ export default function StrixPentestPage() {
               </button>
 
               {activeTab === 'stress' ? (
-                isScanning ? (
+                stressEngineMode === 'chaos-k8s' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.85rem', fontWeight: 600 }}>
+                    <CheckCircle2 size={16} />
+                    Suite Distributed K8s &amp; Chaos Mesh aktif. Gunakan tab manifest &amp; panduan CLI di atas.
+                  </div>
+                ) : isScanning ? (
                   <button
                     type="button"
                     className={styles.stopStressBtn}

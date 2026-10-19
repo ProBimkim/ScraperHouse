@@ -1,8 +1,31 @@
 import connectToDatabase from '@/lib/mongodb';
 import SecurityScanResult from '@/models/SecurityScanResult';
-import { runServerStressTest } from '@/lib/stressEngine';
+import { runServerStressTest, generateChaosMeshSuite } from '@/lib/stressEngine';
 
 export const dynamic = 'force-dynamic';
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const namespace = searchParams.get('namespace') || 'dev';
+    const targetUrl = searchParams.get('targetUrl') || 'http://backend-service.dev.svc.cluster.local/';
+    const k6Parallelism = searchParams.get('k6Parallelism') || 4;
+    const peakTargetRps = searchParams.get('peakTargetRps') || 1000;
+    const backendReplicas = searchParams.get('backendReplicas') || 4;
+
+    const suite = generateChaosMeshSuite({
+      namespace,
+      targetUrl,
+      k6Parallelism,
+      peakTargetRps,
+      backendReplicas,
+    });
+
+    return Response.json(suite);
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
 
 export async function POST(req) {
   let body;
@@ -10,6 +33,16 @@ export async function POST(req) {
     body = await req.json();
   } catch {
     return Response.json({ error: 'Invalid JSON request payload' }, { status: 400 });
+  }
+
+  // Handle Chaos Mesh Suite Generator directly
+  if (body.action === 'generate-chaos-suite' || body.mode === 'chaos-k8s') {
+    try {
+      const suite = generateChaosMeshSuite(body.chaosConfig || body);
+      return Response.json(suite);
+    } catch (err) {
+      return Response.json({ error: err.message }, { status: 500 });
+    }
   }
 
   const {
