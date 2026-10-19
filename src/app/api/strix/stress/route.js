@@ -57,9 +57,14 @@ export async function POST(req) {
     requestBody = '',
   } = body;
 
-  const cleanUrl = typeof targetUrl === 'string' ? targetUrl.trim() : '';
+  let cleanUrl = typeof targetUrl === 'string' ? targetUrl.trim() : '';
   if (!cleanUrl) {
     return Response.json({ error: 'Target URL is required for stress & load testing.' }, { status: 400 });
+  }
+
+  // Auto-normalize domain / base URL if protocol is omitted (e.g. sma3jogja.sch.id or localhost:3000)
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(cleanUrl) ? 'http://' : 'https://') + cleanUrl;
   }
 
   // Validate URL protocol

@@ -11,6 +11,19 @@
  * 6. Step-by-Step CLI Execution Guide
  */
 export function generateChaosMeshSuite(customOptions = {}) {
+  const rawTarget = customOptions.targetUrl || '';
+  let normalizedTarget = (typeof rawTarget === 'string' ? rawTarget.trim() : '');
+  if (normalizedTarget && !/^https?:\/\//i.test(normalizedTarget)) {
+    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|[\w-]+-svc|[\w-]+\.svc|[\w-]+-service)/i.test(normalizedTarget)) {
+      normalizedTarget = 'http://' + normalizedTarget;
+    } else {
+      normalizedTarget = 'https://' + normalizedTarget;
+    }
+  }
+  if (!normalizedTarget) {
+    normalizedTarget = `http://${customOptions.backendServiceName || 'backend-service'}.${customOptions.namespace || 'dev'}.svc.cluster.local/`;
+  }
+
   const opts = {
     namespace: customOptions.namespace || 'dev',
     backendAppName: customOptions.backendAppName || 'backend-api',
@@ -23,7 +36,7 @@ export function generateChaosMeshSuite(customOptions = {}) {
     backendMemoryRequest: customOptions.backendMemoryRequest || '128Mi',
     backendMemoryLimit: customOptions.backendMemoryLimit || '256Mi',
     k6Parallelism: Number(customOptions.k6Parallelism) || 4,
-    targetUrl: customOptions.targetUrl || 'http://backend-service.dev.svc.cluster.local/',
+    targetUrl: normalizedTarget,
     startRateRps: Number(customOptions.startRateRps) || 50,
     warmupTargetRps: Number(customOptions.warmupTargetRps) || 200,
     peakTargetRps: Number(customOptions.peakTargetRps) || 1000,

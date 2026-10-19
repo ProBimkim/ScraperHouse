@@ -31,14 +31,72 @@ import {
   Globe
 } from 'lucide-react';
 
-export default function ChaosMeshSuiteView() {
+/**
+ * Normalizes bare domain or URL into a proper base target URL.
+ * e.g. "sma3jogja.sch.id" -> "https://sma3jogja.sch.id/"
+ * e.g. "localhost:3000" -> "http://localhost:3000/"
+ */
+function normalizeTargetBaseUrl(rawInput) {
+  if (!rawInput || typeof rawInput !== 'string') return '';
+  let str = rawInput.trim();
+  if (!str) return '';
+
+  // Auto-prepend protocol if user entered bare domain or IP
+  if (!/^https?:\/\//i.test(str)) {
+    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|[\w-]+-svc|[\w-]+\.svc|[\w-]+-service)/i.test(str)) {
+      str = 'http://' + str;
+    } else {
+      str = 'https://' + str;
+    }
+  }
+
+  try {
+    const url = new URL(str);
+    return url.origin + (url.pathname === '/' ? '/' : url.pathname);
+  } catch {
+    return str;
+  }
+}
+
+/**
+ * Extracts pure base origin/domain from any URL (stripping deep paths & queries)
+ */
+function extractBaseDomain(rawInput) {
+  if (!rawInput || typeof rawInput !== 'string') return '';
+  const normalized = normalizeTargetBaseUrl(rawInput);
+  try {
+    const u = new URL(normalized);
+    return u.origin + '/';
+  } catch {
+    return rawInput.trim();
+  }
+}
+
+export default function ChaosMeshSuiteView({ initialUrl = '' }) {
   // Config state
   const [namespace, setNamespace] = useState('dev');
   const [backendReplicas, setBackendReplicas] = useState('4');
   const [backendCpuLimit, setBackendCpuLimit] = useState('500m');
   const [backendMemoryLimit, setBackendMemoryLimit] = useState('256Mi');
   const [k6Parallelism, setK6Parallelism] = useState('4');
-  const [targetUrl, setTargetUrl] = useState('http://backend-service.dev.svc.cluster.local/');
+  const [targetUrl, setTargetUrl] = useState(() => {
+    if (initialUrl && initialUrl.trim()) {
+      return initialUrl.trim();
+    }
+    return '';
+  });
+
+  useEffect(() => {
+    if (initialUrl && initialUrl.trim() && !targetUrl) {
+      setTargetUrl(initialUrl.trim());
+    }
+  }, [initialUrl]);
+
+  // Dynamically resolved base URL (used for live preview, k6 generator & bot execution)
+  const effectiveTargetUrl = useMemo(() => {
+    if (!targetUrl.trim()) return '';
+    return normalizeTargetBaseUrl(targetUrl);
+  }, [targetUrl]);
   const [peakTargetRps, setPeakTargetRps] = useState('1000');
   const [networkLatency, setNetworkLatency] = useState('150ms');
   const [networkLoss, setNetworkLoss] = useState('5');
@@ -94,7 +152,7 @@ export default function ChaosMeshSuiteView() {
       backendCpuLimit,
       backendMemoryLimit,
       k6Parallelism,
-      targetUrl,
+      targetUrl: effectiveTargetUrl || `http://backend-service.${namespace}.svc.cluster.local/`,
       peakTargetRps,
       networkLatency,
       networkLoss,
@@ -108,7 +166,7 @@ export default function ChaosMeshSuiteView() {
     backendCpuLimit,
     backendMemoryLimit,
     k6Parallelism,
-    targetUrl,
+    effectiveTargetUrl,
     peakTargetRps,
     networkLatency,
     networkLoss,
@@ -138,7 +196,8 @@ export default function ChaosMeshSuiteView() {
     };
 
     // T = 0s : Inisialisasi Bot
-    addLog('BOT-AGENT', `Memulai Bot Eksekutor Otomatis: Namespace "${namespace}" dengan target ${targetUrl}...`, 'info');
+    const targetEndpoint = effectiveTargetUrl || `http://backend-service.${namespace}.svc.cluster.local/`;
+    addLog('BOT-AGENT', `Memulai Bot Eksekutor Otomatis: Target Base URL "${targetEndpoint}" (Namespace: "${namespace}")...`, 'info');
     addLog('BOT-AGENT', `Spesifikasi: ${backendReplicas} Backend Pods, ${k6Parallelism} k6 Runners, Peak Load ${peakTargetRps} RPS`, 'info');
 
     // T = 1.2s : Step 1 - Target App Setup
@@ -158,7 +217,7 @@ export default function ChaosMeshSuiteView() {
       setBotCurrentStep(2);
       addLog('STEP-2', 'Membuat ConfigMap Kubernetes untuk skrip pengujian k6 terdistribusi...', 'info');
       addLog('KUBECTL', `$ kubectl create configmap k6-test-script --from-file=k6-script.js=02-k6-script.js -n ${namespace}`, 'cmd');
-      addLog('K6-CONFIG', `ConfigMap "k6-test-script" berhasil dibuat. Target: ${targetUrl} | startRate: 50, peakTarget: ${peakTargetRps} RPS`, 'success');
+      addLog('K6-CONFIG', `ConfigMap "k6-test-script" berhasil dibuat. Target: ${targetEndpoint} | startRate: 50, peakTarget: ${peakTargetRps} RPS`, 'success');
     }, 3500);
 
     // T = 5.8s : Step 3 - Deploy k6 Operator & Ramp-up Load
@@ -168,7 +227,7 @@ export default function ChaosMeshSuiteView() {
       addLog('KUBECTL', `$ kubectl apply -f 03-k6-operator-cr.yaml -n ${namespace}`, 'cmd');
       addLog('K6-OPERATOR', `CustomResource k6-distributed-test diterbitkan. Operator memvalidasi manifest.`, 'info');
       addLog('K6-RUNNER', `Spawn ${k6Parallelism} Pod Runner paralel: k6-runner-0, k6-runner-1, k6-runner-2, k6-runner-3`, 'success');
-      addLog('K6-METRICS', `Traffic ramp-up ke ${targetUrl}: 200 RPS -> 500 RPS -> ${peakTargetRps} RPS tercapai secara bertahap!`, 'success');
+      addLog('K6-METRICS', `Traffic ramp-up ke ${targetEndpoint}: 200 RPS -> 500 RPS -> ${peakTargetRps} RPS tercapai secara bertahap!`, 'success');
       setBotMetrics((prev) => ({
         ...prev,
         currentRps: Number(peakTargetRps),
@@ -326,12 +385,21 @@ export default function ChaosMeshSuiteView() {
           </div>
         </div>
 
-        {/* Kolum Input URL Target & Tombol Eksekusi 1-Klik */}
+        {/* Kolum Input Domain / URL Base Target & Tombol Eksekusi 1-Klik */}
         <div className={styles.botUrlBar}>
           <div className={styles.botUrlLabel}>
-            <Globe size={16} style={{ color: '#38bdf8' }} />
-            <span>URL Target Pengujian (Endpoint Beban &amp; Injeksi Chaos):</span>
+            <div className={styles.botUrlLabelText}>
+              <Globe size={16} style={{ color: '#38bdf8' }} />
+              <span>Domain / URL Base Website Target:</span>
+            </div>
+            {effectiveTargetUrl && (
+              <div className={styles.botUrlResolvedBadge}>
+                <span>Base URL Aktif:</span>
+                <code>{effectiveTargetUrl}</code>
+              </div>
+            )}
           </div>
+
           <div className={styles.botUrlInputGroup}>
             <div className={styles.botUrlInputWrapper}>
               <Globe size={18} style={{ color: '#64748b', marginRight: '8px', flexShrink: 0 }} />
@@ -340,9 +408,20 @@ export default function ChaosMeshSuiteView() {
                 className={styles.botUrlInput}
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="https://example.com/api atau http://backend-service.dev.svc.cluster.local/"
+                placeholder="Cukup masukkan domain / URL base, misal: sma3jogja.sch.id atau mysite.com"
                 disabled={botStatus === 'running'}
               />
+              {/* Tombol pintas potong path jika pengguna memasukkan URL lengkap */}
+              {targetUrl.includes('/') && targetUrl.replace(/^https?:\/\//, '').includes('/') && (
+                <button
+                  type="button"
+                  className={styles.botStripPathBtn}
+                  onClick={() => setTargetUrl(extractBaseDomain(targetUrl))}
+                  title="Ekstrak hanya domain base"
+                >
+                  Ambil Base Domain Saja
+                </button>
+              )}
             </div>
 
             <div className={styles.botActionRow}>
@@ -352,7 +431,7 @@ export default function ChaosMeshSuiteView() {
                   className={styles.botStartBtn}
                   onClick={handleStartBot}
                   disabled={!targetUrl || !targetUrl.trim()}
-                  title={!targetUrl || !targetUrl.trim() ? 'Masukkan URL target terlebih dahulu' : 'Mulai eksekusi bot'}
+                  title={!targetUrl || !targetUrl.trim() ? 'Masukkan domain / URL base terlebih dahulu' : 'Mulai eksekusi bot'}
                 >
                   <Play size={18} />
                   Jalankan Bot Otomatis (1-Click Run)
@@ -384,29 +463,40 @@ export default function ChaosMeshSuiteView() {
           {/* Preset chips for fast target endpoint selection */}
           <div className={styles.botUrlChipsRow}>
             <span>Template Cepat:</span>
+            {initialUrl && initialUrl.trim() && (
+              <button
+                type="button"
+                className={styles.botUrlChip}
+                onClick={() => setTargetUrl(initialUrl.trim())}
+                disabled={botStatus === 'running'}
+                style={{ borderColor: '#38bdf8', color: '#38bdf8' }}
+              >
+                Gunakan Target Strix ({initialUrl.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')})
+              </button>
+            )}
             <button
               type="button"
               className={styles.botUrlChip}
-              onClick={() => setTargetUrl(`http://backend-service.${namespace}.svc.cluster.local/`)}
+              onClick={() => setTargetUrl('example.com')}
               disabled={botStatus === 'running'}
             >
-              In-Cluster K8s (http://backend-service.{namespace}.svc.cluster.local/)
+              Domain Web Publik (example.com)
             </button>
             <button
               type="button"
               className={styles.botUrlChip}
-              onClick={() => setTargetUrl('http://localhost:8080/api/v1/health')}
+              onClick={() => setTargetUrl('localhost:3000')}
               disabled={botStatus === 'running'}
             >
-              Localhost (http://localhost:8080/api/v1/health)
+              Localhost (localhost:3000)
             </button>
             <button
               type="button"
               className={styles.botUrlChip}
-              onClick={() => setTargetUrl('https://api.staging.internal/v1/checkout')}
+              onClick={() => setTargetUrl(`backend-service.${namespace}.svc`)}
               disabled={botStatus === 'running'}
             >
-              Staging Internal (https://api.staging.internal/v1/checkout)
+              In-Cluster K8s (backend-service.{namespace}.svc)
             </button>
           </div>
         </div>
@@ -659,13 +749,13 @@ export default function ChaosMeshSuiteView() {
           </div>
 
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Target Endpoint URL</label>
+            <label className={styles.label}>Domain / URL Base Website Target</label>
             <input
               type="text"
               className={styles.textInput}
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
-              placeholder="http://backend-service.dev.svc.cluster.local/"
+              placeholder="sma3jogja.sch.id atau https://domain.com"
             />
           </div>
         </div>

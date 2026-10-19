@@ -229,10 +229,15 @@ export default function StrixPentestPage() {
   const handleStartStressTest = async (e) => {
     if (e) e.preventDefault();
     setErrorMsg('');
-    const targetVal = (stressUrl || targetInput).trim();
+    let targetVal = (stressUrl || targetInput).trim();
     if (!targetVal) {
-      setErrorMsg('Silakan masukkan URL target web/API yang valid untuk stress test.');
+      setErrorMsg('Silakan masukkan domain atau URL target website untuk stress test.');
       return;
+    }
+
+    // Auto-normalize bare domain (e.g. sma3jogja.sch.id -> https://sma3jogja.sch.id)
+    if (!/^https?:\/\//i.test(targetVal)) {
+      targetVal = (/^(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(targetVal) ? 'http://' : 'https://') + targetVal;
     }
 
     const volumeNum = Math.max(parseInt(stressVolume, 10) || 100, 1);
@@ -733,19 +738,19 @@ export default function StrixPentestPage() {
                 </div>
 
                 {stressEngineMode === 'chaos-k8s' ? (
-                  <ChaosMeshSuiteView />
+                  <ChaosMeshSuiteView initialUrl={targetInput || stressUrl || ''} />
                 ) : (
                   <>
                     <div className={styles.formGroup}>
                       <label className={styles.formLabel}>
-                        Target Server URL / Endpoint untuk Stress Test
+                        Domain / URL Base Website Target untuk Stress Test
                       </label>
                       <div className={styles.inputWrapper}>
                         <Activity size={20} className={styles.inputIcon} />
                         <input
                           type="text"
                           className={styles.textInput}
-                          placeholder="https://example.com/api/test atau https://staging.myapp.com"
+                          placeholder="Masukkan domain/URL website saja, misal: sma3jogja.sch.id atau https://example.com"
                           value={stressUrl}
                           onChange={(e) => setStressUrl(e.target.value)}
                           disabled={isScanning}
