@@ -27,7 +27,8 @@ import {
   Bot,
   Square,
   Zap,
-  Radio
+  Radio,
+  Globe
 } from 'lucide-react';
 
 export default function ChaosMeshSuiteView() {
@@ -157,7 +158,7 @@ export default function ChaosMeshSuiteView() {
       setBotCurrentStep(2);
       addLog('STEP-2', 'Membuat ConfigMap Kubernetes untuk skrip pengujian k6 terdistribusi...', 'info');
       addLog('KUBECTL', `$ kubectl create configmap k6-test-script --from-file=k6-script.js=02-k6-script.js -n ${namespace}`, 'cmd');
-      addLog('K6-CONFIG', `ConfigMap "k6-test-script" berhasil dibuat. Parameter: startRate: 50, peakTarget: ${peakTargetRps} RPS`, 'success');
+      addLog('K6-CONFIG', `ConfigMap "k6-test-script" berhasil dibuat. Target: ${targetUrl} | startRate: 50, peakTarget: ${peakTargetRps} RPS`, 'success');
     }, 3500);
 
     // T = 5.8s : Step 3 - Deploy k6 Operator & Ramp-up Load
@@ -167,7 +168,7 @@ export default function ChaosMeshSuiteView() {
       addLog('KUBECTL', `$ kubectl apply -f 03-k6-operator-cr.yaml -n ${namespace}`, 'cmd');
       addLog('K6-OPERATOR', `CustomResource k6-distributed-test diterbitkan. Operator memvalidasi manifest.`, 'info');
       addLog('K6-RUNNER', `Spawn ${k6Parallelism} Pod Runner paralel: k6-runner-0, k6-runner-1, k6-runner-2, k6-runner-3`, 'success');
-      addLog('K6-METRICS', `Traffic ramp-up: 200 RPS -> 500 RPS -> ${peakTargetRps} RPS tercapai secara bertahap!`, 'success');
+      addLog('K6-METRICS', `Traffic ramp-up ke ${targetUrl}: 200 RPS -> 500 RPS -> ${peakTargetRps} RPS tercapai secara bertahap!`, 'success');
       setBotMetrics((prev) => ({
         ...prev,
         currentRps: Number(peakTargetRps),
@@ -323,38 +324,90 @@ export default function ChaosMeshSuiteView() {
               Bot otonom yang secara otomatis mengeksekusi pipeline pengujian ketahanan klaster Kubernetes secara berurutan: mulai dari deployment backend &amp; redis, sinkronisasi skrip k6, peluncuran runner terdistribusi ({peakTargetRps} RPS), injeksi gangguan gabungan Chaos Mesh, evaluasi safety watchdog Prometheus, hingga pembersihan otomatis (*auto-teardown*).
             </p>
           </div>
+        </div>
 
-          <div className={styles.botActionRow}>
-            {botStatus !== 'running' ? (
-              <button
-                type="button"
-                className={styles.botStartBtn}
-                onClick={handleStartBot}
-              >
-                <Play size={18} />
-                Jalankan Bot Otomatis (1-Click Run)
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={styles.botAbortBtn}
-                onClick={handleAbortBot}
-              >
-                <Square size={16} />
-                Hentikan Darurat (Emergency Abort)
-              </button>
-            )}
+        {/* Kolum Input URL Target & Tombol Eksekusi 1-Klik */}
+        <div className={styles.botUrlBar}>
+          <div className={styles.botUrlLabel}>
+            <Globe size={16} style={{ color: '#38bdf8' }} />
+            <span>URL Target Pengujian (Endpoint Beban &amp; Injeksi Chaos):</span>
+          </div>
+          <div className={styles.botUrlInputGroup}>
+            <div className={styles.botUrlInputWrapper}>
+              <Globe size={18} style={{ color: '#64748b', marginRight: '8px', flexShrink: 0 }} />
+              <input
+                type="text"
+                className={styles.botUrlInput}
+                value={targetUrl}
+                onChange={(e) => setTargetUrl(e.target.value)}
+                placeholder="https://example.com/api atau http://backend-service.dev.svc.cluster.local/"
+                disabled={botStatus === 'running'}
+              />
+            </div>
 
-            {(botStatus === 'completed' || botStatus === 'aborted') && (
-              <button
-                type="button"
-                className={styles.botResetBtn}
-                onClick={handleResetBot}
-              >
-                <RefreshCw size={15} />
-                Reset Bot
-              </button>
-            )}
+            <div className={styles.botActionRow}>
+              {botStatus !== 'running' ? (
+                <button
+                  type="button"
+                  className={styles.botStartBtn}
+                  onClick={handleStartBot}
+                  disabled={!targetUrl || !targetUrl.trim()}
+                  title={!targetUrl || !targetUrl.trim() ? 'Masukkan URL target terlebih dahulu' : 'Mulai eksekusi bot'}
+                >
+                  <Play size={18} />
+                  Jalankan Bot Otomatis (1-Click Run)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.botAbortBtn}
+                  onClick={handleAbortBot}
+                >
+                  <Square size={16} />
+                  Hentikan Darurat (Emergency Abort)
+                </button>
+              )}
+
+              {(botStatus === 'completed' || botStatus === 'aborted') && (
+                <button
+                  type="button"
+                  className={styles.botResetBtn}
+                  onClick={handleResetBot}
+                >
+                  <RefreshCw size={15} />
+                  Reset Bot
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Preset chips for fast target endpoint selection */}
+          <div className={styles.botUrlChipsRow}>
+            <span>Template Cepat:</span>
+            <button
+              type="button"
+              className={styles.botUrlChip}
+              onClick={() => setTargetUrl(`http://backend-service.${namespace}.svc.cluster.local/`)}
+              disabled={botStatus === 'running'}
+            >
+              In-Cluster K8s (http://backend-service.{namespace}.svc.cluster.local/)
+            </button>
+            <button
+              type="button"
+              className={styles.botUrlChip}
+              onClick={() => setTargetUrl('http://localhost:8080/api/v1/health')}
+              disabled={botStatus === 'running'}
+            >
+              Localhost (http://localhost:8080/api/v1/health)
+            </button>
+            <button
+              type="button"
+              className={styles.botUrlChip}
+              onClick={() => setTargetUrl('https://api.staging.internal/v1/checkout')}
+              disabled={botStatus === 'running'}
+            >
+              Staging Internal (https://api.staging.internal/v1/checkout)
+            </button>
           </div>
         </div>
 
