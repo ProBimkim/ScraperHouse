@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import styles from './ChaosMeshSuiteView.module.css';
-import { generateChaosMeshSuite } from '@/lib/stressEngine';
+import { generateChaosMeshSuite } from '@/lib/chaosMeshGenerator';
 import {
   Layers,
   Cpu,

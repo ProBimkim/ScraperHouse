@@ -32,7 +32,7 @@ const securityHeaders = [
 
 const nextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium-min'],
+  serverExternalPackages: ['puppeteer', 'puppeteer-core', '@sparticuz/chromium-min', 'https-proxy-agent', 'node-fetch'],
   async headers() {
     return [
       {
