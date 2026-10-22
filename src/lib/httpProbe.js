@@ -16,6 +16,20 @@ export function responseSignature(status, body) {
   return `${status}:${String(body || '').slice(0, 120)}`;
 }
 
+/**
+ * Edge bot-protection challenges (Vercel Security Checkpoint, Cloudflare
+ * "Just a moment", etc.) answer with 403 + a challenge page. That is NOT an
+ * application response: probing further only produces bogus findings
+ * ("no rate limiting", "CSRF missing"). Detect and skip them.
+ */
+export function isBotChallenge(status, body, headers) {
+  if (status !== 403 && status !== 503) return false;
+  const mitigated = headers && (headers.get?.('x-vercel-mitigated') || headers.get?.('cf-mitigated'));
+  if (mitigated) return true;
+  const text = String(body || '').slice(0, 600);
+  return /vercel security checkpoint|just a moment|checking your browser|attention required|cf-browser-verification/i.test(text);
+}
+
 export function randomMissPath(prefix = '/api') {
   return `${prefix}/__probe_miss_${randomBytes(8).toString('hex')}`;
 }
@@ -34,6 +48,9 @@ export async function getMissSignature(fetchImpl, baseUrl, prefix = '/api') {
       timeoutMs: 6000,
     });
     const body = await res.text().catch(() => '');
+    if (isBotChallenge(res.status, body, res.headers)) {
+      return '__BOT_CHALLENGE__';
+    }
     return responseSignature(res.status, body);
   } catch {
     return null;
@@ -65,6 +82,9 @@ export async function classifyAuthEndpoint(fetchImpl, url, missSig) {
     });
     status = res.status;
     body = await res.text().catch(() => '');
+    if (isBotChallenge(status, body, res.headers)) {
+      return { isReal: false, status, reason: 'ditahan edge bot-protection challenge (bukan respons aplikasi)' };
+    }
   } catch (err) {
     return { isReal: false, status: 0, reason: `probe gagal: ${err.message}` };
   }

@@ -4,7 +4,7 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import nodeFetch from 'node-fetch';
-import { getMissSignature, classifyAuthEndpoint, responseSignature } from '@/lib/httpProbe';
+import { getMissSignature, classifyAuthEndpoint, responseSignature, isBotChallenge } from '@/lib/httpProbe';
 import { runVulnerabilityStressCooperation } from '@/lib/stressEngine';
 import { runAccountTakeoverAssessment } from '@/lib/accountTakeoverAssessment';
 import { 
@@ -702,6 +702,12 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     baselineStatus = baseRes.status;
     baselineBody = await baseRes.text().catch(() => '');
     baselineOk = true;
+    if (isBotChallenge(baselineStatus, baselineBody, baseRes.headers)) {
+      // Edge bot-protection (Vercel Security Checkpoint / Cloudflare) menahan
+      // request. Ini bukan respons aplikasi - jangan buat temuan dari sini.
+      diagnosis.sampleResponseSnippet = `Target ditahan edge bot-protection challenge (HTTP ${baselineStatus}) — bukan respons aplikasi, rate-limit/CSRF tidak dievaluasi.`;
+      return diagnosis;
+    }
   } catch {
     // Network error / timeout: baseline is UNKNOWN, not "401".
   }
