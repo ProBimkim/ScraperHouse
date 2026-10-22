@@ -987,6 +987,20 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
       htmlBody = '';
     }
 
+    // Edge bot-protection challenge (Vercel Security Checkpoint / Cloudflare).
+    // Kalau target ditahan di edge, SELURUH probe berikutnya tidak akan
+    // menyentuh aplikasi dan hanya menghasilkan temuan sampah. Tandai lebih
+    // awal supaya orchestrator bisa menghentikan scan dengan pesan jelas.
+    if (isBotChallenge(res.status, htmlBody, res.headers)) {
+      reconData.edgeChallenge = {
+        detected: true,
+        status: res.status,
+        provider: headerObj['x-vercel-mitigated'] ? 'Vercel Security Checkpoint'
+          : (headerObj['cf-mitigated'] ? 'Cloudflare Bot Management' : 'Edge bot-protection'),
+        retryAfter: headerObj['retry-after'] || null,
+      };
+    }
+
     // Detect server banner
     if (headerObj['server']) {
       reconData.server = headerObj['server'];
@@ -2107,6 +2121,39 @@ export async function runStrixPentest({
   if (targetType === 'url') {
     onProgress({ phase: 'recon', message: 'Probing live target: checking headers, CORS, TLS, and probing sensitive endpoints...', progress: 20 });
     reconData = await probeWebTarget(target, { onProgress });
+
+    // Target ditahan edge bot-protection (Vercel Security Checkpoint /
+    // Cloudflare). Hentikan scan SEKARANG: probe lanjutan hanya menghasilkan
+    // temuan sampah, dan trafik tambahan justru memperpanjang challenge.
+    if (reconData.edgeChallenge?.detected) {
+      const ec = reconData.edgeChallenge;
+      onProgress({
+        phase: 'recon',
+        message: `Scan dihentikan: target ditahan ${ec.provider} (HTTP ${ec.status}). Bukan respons aplikasi - findings lanjutan tidak valid.`,
+        progress: 40,
+      });
+      return {
+        title: 'Security Scan - Halted by Edge Bot Protection',
+        targetType,
+        target,
+        scanMode,
+        instruction,
+        summary: {
+          riskRating: 'INFORMATIONAL',
+          riskScore: 0,
+          totalVulnerabilities: 0,
+          critical: 0, high: 0, medium: 0, low: 0,
+        },
+        executiveSummary: `Scan dihentikan pada fase reconnaissance. ${ec.provider} menahan request dari IP pemindai (HTTP ${ec.status}${ec.retryAfter ? `, Retry-After: ${ec.retryAfter}` : ''}). Respons tersebut bukan dari aplikasi, sehingga setiap temuan yang dibuat dari probe lanjutan tidak valid dan sengaja tidak dilaporkan. Tunggu challenge berakhir, jalankan scanner dari IP lain, atau gunakan rotasi proxy untuk pemindaian.`,
+        recon: { url: reconData.url, statusCode: reconData.statusCode, server: reconData.server },
+        vulnerabilities: [],
+        vulnerabilityStressImpact: null,
+        accountTakeoverAssessment: null,
+        discoveredAdminCredentials: [],
+        edgeChallenge: ec,
+        sarif: null,
+      };
+    }
 
     // Report discovery stats
     if (reconData.envEndpoints?.length > 0) {
