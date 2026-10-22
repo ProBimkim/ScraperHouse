@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, use } from 'react';
-import { ArrowLeft, Loader2, ExternalLink, Search, Trash2, FileText, Sparkles } from 'lucide-react';
+import { ArrowLeft, Loader2, ExternalLink, Search, Trash2, FileText, Sparkles, Bot } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
@@ -47,6 +47,8 @@ export default function ScraperResult({ params }) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfProgress, setPdfProgress] = useState('');
   const [isProcessingOcr, setIsProcessingOcr] = useState(false);
+  const [isProcessingAi, setIsProcessingAi] = useState(false);
+  const [aiProgress, setAiProgress] = useState('');
 
   const handleTriggerOcr = async () => {
     // 1. Cek apakah ada gambar soal yang belum di-OCR
@@ -98,6 +100,73 @@ export default function ScraperResult({ params }) {
       setTimeout(() => setActionToast(null), 4000);
     } finally {
       setIsProcessingOcr(false);
+    }
+  };
+
+  const handleTriggerAI = async () => {
+    if (!data?.questions?.length) {
+      setActionToast('Tidak ada soal untuk dijawab.');
+      setTimeout(() => setActionToast(null), 3000);
+      return;
+    }
+
+    const unanswered = (data?.questions || []).filter(
+      (q) => !data?.aiAnswers?.some((a) => a.questionId === q.id)
+    );
+
+    let force = false;
+    if (unanswered.length === 0 && (data?.aiAnswers?.length || 0) > 0) {
+      const confirmRerun = window.confirm(
+        `Semua ${data.questions.length} soal sudah memiliki jawaban AI. Apakah Anda ingin menjalankan ulang (regenerate) jawaban AI dengan MiniMax M3.1 Flash?`
+      );
+      if (!confirmRerun) return;
+      force = true;
+    }
+
+    setIsProcessingAi(true);
+    setAiProgress('Memulai AI Solver...');
+    const totalToProcess = force ? data.questions.length : (unanswered.length || data.questions.length);
+    let totalResolved = 0;
+
+    try {
+      while (true) {
+        setAiProgress(`Menjawab ${totalResolved}/${totalToProcess}...`);
+        setActionToast(`🤖 Menjawab soal dengan AI: ${totalResolved}/${totalToProcess} selesai...`);
+
+        const res = await fetch(`/api/scraper/${slug}/ai?limit=20${force ? '&force=true' : ''}`, {
+          method: 'POST',
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Gagal memproses AI solver');
+        }
+
+        const resData = await res.json();
+        totalResolved += resData.processed || 0;
+
+        if (force) force = false;
+
+        if (resData.remaining <= 0 || resData.processed === 0) {
+          break;
+        }
+      }
+
+      const refreshed = await fetch(`/api/scraper/${slug}`);
+      if (refreshed.ok) {
+        const fresh = await refreshed.json();
+        setData(fresh);
+        const count = fresh?.aiAnswers?.length || 0;
+        setActionToast(`✓ Berhasil! ${count} soal telah dijawab oleh AI (MiniMax M3.1 Flash).`);
+        setTimeout(() => setActionToast(null), 4000);
+      }
+    } catch (e) {
+      console.error('AI Solver error:', e);
+      setActionToast('Error AI: ' + e.message);
+      setTimeout(() => setActionToast(null), 4000);
+    } finally {
+      setIsProcessingAi(false);
+      setAiProgress('');
     }
   };
 
@@ -368,13 +437,27 @@ export default function ScraperResult({ params }) {
                 className="btn btn-primary"
                 style={{ background: 'rgba(168, 85, 247, 0.2)', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#d8b4fe' }}
                 onClick={handleTriggerOcr}
-                disabled={isProcessingOcr || isGeneratingPdf || !data?.questions?.some(q => q.imageUrl || q.choices?.some(c => typeof c === 'object' && c?.imageUrl))}
+                disabled={isProcessingOcr || isProcessingAi || isGeneratingPdf || !data?.questions?.some(q => q.imageUrl || q.choices?.some(c => typeof c === 'object' && c?.imageUrl))}
                 title="Mulai proses OCR untuk memindai teks pada gambar soal di web"
               >
                 {isProcessingOcr ? (
                   <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Memproses OCR...</>
                 ) : (
                   <><Sparkles size={16} /> OCR</>
+                )}
+              </button>
+
+              <button
+                className="btn btn-primary"
+                style={{ background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.4)', color: '#93c5fd' }}
+                onClick={handleTriggerAI}
+                disabled={isProcessingAi || isProcessingOcr || isGeneratingPdf || !data?.questions?.length}
+                title="Jalankan AI Solver (MiniMax M3.1 Flash / Groq Fallback) untuk menganalisis dan menjawab semua soal"
+              >
+                {isProcessingAi ? (
+                  <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {aiProgress || 'Menjawab Soal...'}</>
+                ) : (
+                  <><Bot size={16} /> Run AI</>
                 )}
               </button>
             </div>
@@ -535,7 +618,34 @@ export default function ScraperResult({ params }) {
                     </ul>
                   )}
 
-                
+                  {(() => {
+                    const qAi = data?.aiAnswers?.find(a => a.questionId === q.id);
+                    if (!qAi) return null;
+                    return (
+                      <div className="ai-answer-card" style={{ marginTop: '16px', marginBottom: '16px' }}>
+                        <div className="ai-answer-header">
+                          <Bot size={16} />
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Jawaban AI (MiniMax M3.1 Flash)</span>
+                        </div>
+                        <div className="ai-answer-body">
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                            Kunci Jawaban: <span style={{ color: 'var(--success)' }}>{qAi.answer}</span>
+                          </div>
+                          {qAi.thinking && (
+                            <details className="ai-thinking" style={{ marginTop: '8px' }}>
+                              <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                🧠 Lihat Analisis &amp; Langkah Pengerjaan AI
+                              </summary>
+                              <div className="ai-thinking-content" style={{ marginTop: '6px', fontSize: '0.85rem', whiteSpace: 'pre-line' }}>
+                                {qAi.thinking}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                 <CommentBox
                   slug={slug}
                   questionId={q.id}
