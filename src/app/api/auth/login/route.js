@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { signSession, SESSION_TTL_MS } from '@/lib/session'
 
 // shortcut: in-memory IP rate limiter resets on server restart; upgrade to Redis/Upstash for multi-region serverless
 const loginAttempts = new Map()
@@ -41,17 +42,21 @@ export async function POST(request) {
     }
 
     const { keyword } = await request.json()
-    // Fallback to DEV_BIMKIM if environment variable is undefined (e.g. dev server not restarted)
-    const correctPassword = process.env.APP_PASSWORD || 'DEV_BIMKIM'
+    // Fail closed: never fall back to a hardcoded default password
+    const correctPassword = process.env.APP_PASSWORD
+    if (!correctPassword) {
+      return NextResponse.json({ error: 'Konfigurasi server belum lengkap' }, { status: 500 })
+    }
 
     if (keyword === correctPassword) {
       loginAttempts.delete(ip)
+      const token = await signSession(SESSION_TTL_MS)
       const cookieStore = await cookies()
-      cookieStore.set('auth_token', 'true', {
+      cookieStore.set('auth_token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7, // 1 week
+        maxAge: SESSION_TTL_MS / 1000, // 1 week
         path: '/',
       })
       

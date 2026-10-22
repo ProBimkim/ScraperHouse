@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import ScrapeResult from '@/models/ScrapeResult';
+import { extractAppPassword, isValidAppPassword } from '@/lib/appAuth';
 
 export async function GET(req, { params }) {
   try {
@@ -21,10 +22,9 @@ export async function GET(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const { slug } = await params;
-    const url = new URL(req.url);
-    const password = url.searchParams.get('password');
+    const password = extractAppPassword(req, null);
 
-    if (password !== process.env.APP_PASSWORD) {
+    if (!isValidAppPassword(password)) {
       return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
     }
 

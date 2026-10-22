@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/mongodb';
 import GlobalErrorLog from '@/models/GlobalErrorLog';
+import { extractAppPassword, isValidAppPassword } from '@/lib/appAuth';
 
 // GET all unresolved errors
 export async function GET(req) {
@@ -38,10 +39,9 @@ export async function PATCH() {
 // DELETE — permanently delete ALL error history
 export async function DELETE(req) {
   try {
-    const url = new URL(req.url);
-    const password = url.searchParams.get('password');
+    const password = extractAppPassword(req, null);
 
-    if (password !== process.env.APP_PASSWORD) {
+    if (!isValidAppPassword(password)) {
       return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
     }
 

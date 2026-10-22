@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectToDatabase from '@/lib/mongodb';
 import SherlockResult from '@/models/SherlockResult';
+import { extractAppPassword, isValidAppPassword } from '@/lib/appAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,10 +30,9 @@ export async function GET(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const { id } = await params;
-    const url = new URL(req.url);
-    const password = url.searchParams.get('password');
+    const password = extractAppPassword(req, null);
 
-    if (password !== process.env.APP_PASSWORD) {
+    if (!isValidAppPassword(password)) {
       return NextResponse.json({ error: 'Unauthorized: Invalid password' }, { status: 401 });
     }
 

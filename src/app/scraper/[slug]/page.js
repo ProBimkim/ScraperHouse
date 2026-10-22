@@ -173,7 +173,11 @@ export default function ScraperResult({ params }) {
   const handleDeleteConfirm = async (password) => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/scraper/${slug}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/scraper/${slug}`, {
+        method: 'DELETE',
+        headers: { 'x-app-password': password },
+      });
+
       if (res.ok) {
         router.push('/ms-forms');
       } else {

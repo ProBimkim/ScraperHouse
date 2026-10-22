@@ -62,7 +62,11 @@ export default function SherlockDetailPage({ params }) {
   const handleDeleteConfirm = async (password) => {
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/sherlock/${id}?password=${encodeURIComponent(password)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sherlock/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-app-password': password },
+      });
+
       if (res.ok) {
         router.push('/sherlock');
       } else {

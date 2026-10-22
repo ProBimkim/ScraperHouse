@@ -84,9 +84,11 @@ export default function ErrorMonitorPage() {
     setDeleting(true);
     setConfirmDelete(false);
     try {
-      const res = await fetch(`/api/errors?password=${encodeURIComponent(password)}`, {
+      const res = await fetch('/api/errors', {
         method: 'DELETE',
+        headers: { 'x-app-password': password },
       });
+
       if (res.ok) {
         const data = await res.json();
         setToast(`🗑️ ${data.deletedCount} error(s) permanently deleted`);
