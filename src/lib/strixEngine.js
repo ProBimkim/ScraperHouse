@@ -377,7 +377,7 @@ export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL
     body: JSON.stringify({
       model,
       messages,
-      reasoning: { effort: 'low' },
+      reasoning: { effort: 'high' },
       response_format: { type: 'json_object' },
       max_tokens: maxTokens,
       temperature: 0.2,
@@ -390,9 +390,15 @@ export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL
   }
 
   const json = await res.json();
-  const content = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning;
+  let content = json.choices?.[0]?.message?.content;
+  if (!content && json.choices?.[0]?.message?.reasoning) {
+    const rawReasoning = json.choices[0].message.reasoning;
+    if (rawReasoning.includes('{') && rawReasoning.includes('}')) {
+      content = rawReasoning;
+    }
+  }
   if (!content) {
-    throw new Error(`OpenRouter model ${model} returned empty completion.`);
+    throw new Error(`OpenRouter model ${model} returned empty content (finish_reason: ${json.choices?.[0]?.finish_reason || 'unknown'}).`);
   }
   return content;
 }

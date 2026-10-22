@@ -69,10 +69,10 @@ Format:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: formattedQuestions },
           ],
-          reasoning: { effort: 'low' },
+          reasoning: { effort: 'high' },
           response_format: { type: 'json_object' },
           temperature: 0.1,
-          max_tokens: 4096,
+          max_tokens: 8192,
         }),
       });
 
@@ -82,9 +82,11 @@ Format:
         if (content) {
           const parsed = JSON.parse(content);
           if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
-            console.log(`[AI Agent] Successfully resolved ${parsed.results.length} answers using Primary AI (${PRIMARY_MODEL})!`);
+            console.log(`[AI Agent] Successfully resolved ${parsed.results.length} answers using Primary AI (${PRIMARY_MODEL}) with high reasoning!`);
             return parsed.results;
           }
+        } else {
+          console.warn(`[AI Agent] Primary AI (${PRIMARY_MODEL}) returned empty content (finish_reason: ${data.choices?.[0]?.finish_reason}). Engaging Groq fallback...`);
         }
       } else {
         const errorText = await res.text();

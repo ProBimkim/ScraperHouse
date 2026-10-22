@@ -35,9 +35,9 @@ export async function createOpenRouterDiagramStream({ prompt, model = PRIMARY_DI
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      reasoning: { effort: 'low' },
+      reasoning: { effort: 'high' },
       temperature: 0.2,
-      max_tokens: 4096,
+      max_tokens: 8192,
       stream: true,
     }),
   });

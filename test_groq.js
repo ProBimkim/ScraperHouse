@@ -45,20 +45,24 @@ async function testDualAI() {
         body: JSON.stringify({
           model: PRIMARY_MODEL,
           messages: [{ role: 'system', content: sys }, { role: 'user', content: q }],
-          reasoning: { effort: 'low' },
+          reasoning: { effort: 'high' },
           response_format: { type: 'json_object' },
-          max_tokens: 4096,
+          max_tokens: 8192,
           temperature: 0.1,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        console.log('[Test] Primary AI Message:', JSON.stringify(data.choices?.[0]?.message, null, 2));
-        console.log('[Test] Primary AI Success:\n', data.choices?.[0]?.message?.content);
-        return;
+        const content = data.choices?.[0]?.message?.content;
+        if (content) {
+          console.log('[Test] Primary AI Success:\n', content);
+          return;
+        }
+        console.warn(`[Test] Primary AI exhausted token limit during high reasoning (finish_reason: ${data.choices?.[0]?.finish_reason}). Engaging Groq fallback...`);
+      } else {
+        console.warn(`[Test] OpenRouter HTTP error: ${res.status}`);
       }
-      console.warn(`[Test] OpenRouter HTTP error: ${res.status}`);
     } catch (e) {
       console.warn(`[Test] Primary AI failed: ${e.message}`);
     }
