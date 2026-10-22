@@ -4,6 +4,7 @@ import chromium from '@sparticuz/chromium-min';
 import puppeteerCore from 'puppeteer-core';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import nodeFetch from 'node-fetch';
+import { getMissSignature, classifyAuthEndpoint, responseSignature } from '@/lib/httpProbe';
 import { runVulnerabilityStressCooperation } from '@/lib/stressEngine';
 import { runAccountTakeoverAssessment } from '@/lib/accountTakeoverAssessment';
 import { 
@@ -709,16 +710,25 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
   // A POST to a GET-only page (405), a missing route (404) or a redirect-to-login
   // (307/302) means this path is NOT a credential-processing endpoint.
   // Rate-limit / CSRF findings on such a path are meaningless false positives.
+  //
+  // Differential check against a random miss path: a catch-all middleware
+  // answers unauthenticated requests with a generic 401 JSON body that is
+  // IDENTICAL to what a missing path returns. Without this, a non-existent
+  // path looks like a working auth handler that "has no rate limiting".
+  const missSig = await getMissSignature(resilientFetch, baseUrl);
   const isMethodRejected = baselineStatus === 405 || baselineStatus === 501;
   const isNotFound = baselineStatus === 404;
   const isRedirect = [301, 302, 303, 307, 308].includes(baselineStatus);
   const looksLikeHtml = /<html|<!doctype/i.test(baselineBody);
-  diagnosis.endpointIsAuthHandler = baselineOk && !isMethodRejected && !isNotFound && !isRedirect && !looksLikeHtml;
+  const isCatchAll = Boolean(missSig) && baselineOk && responseSignature(baselineStatus, baselineBody) === missSig;
+  diagnosis.endpointIsAuthHandler = baselineOk && !isMethodRejected && !isNotFound && !isRedirect && !looksLikeHtml && !isCatchAll;
 
   if (!diagnosis.endpointIsAuthHandler) {
-    diagnosis.sampleResponseSnippet = baselineOk
-      ? `HTTP ${baselineStatus} — endpoint bukan handler kredensial (method/path tidak memproses login).`
-      : `Probe baseline gagal (timeout/network) — status endpoint tidak dapat diverifikasi, rate-limit/CSRF tidak dievaluasi.`;
+    diagnosis.sampleResponseSnippet = !baselineOk
+      ? `Probe baseline gagal (timeout/network) — status endpoint tidak dapat diverifikasi, rate-limit/CSRF tidak dievaluasi.`
+      : isCatchAll
+      ? `Respons identik dengan path acak (catch-all middleware) — ${targetEndpoint} bukan handler kredensial, rate-limit/CSRF tidak dievaluasi.`
+      : `HTTP ${baselineStatus} — endpoint bukan handler kredensial (method/path tidak memproses login).`;
     return diagnosis;
   }
 
@@ -1681,6 +1691,12 @@ Your mission is to perform an exhaustive, evidence-backed penetration test again
    - Show the exact code diff or replacement snippet that completely eliminates the vulnerability.
 7. CVSS v3.1 SCORING:
    - Provide an accurate CVSS base score (0.0 to 10.0) reflecting real-world exploitability and impact.
+7b. EVIDENCE DISCIPLINE (CRITICAL - DO NOT SKIP):
+   - Only report a MISSING security control (rate limiting, CSRF protection, bot defense) for an endpoint whose telemetry line explicitly states that control is ABSENT or MISSING.
+   - An endpoint marked "NOT EVALUATED" is NOT evidence of a missing control. It was skipped because it is not a credential handler (GET-only page, redirect, or a path that does not exist). NEVER create a finding for it.
+   - "ENFORCED (HTTP 429 terverifikasi)" or "PROTECTED (Origin/Sec-Fetch-Site diverifikasi...)" means the control EXISTS and was proven by a live request. Reporting it as missing is a false positive.
+   - If telemetry shows a control is enforced, state that plainly in the executive summary instead of inventing a weakness.
+   - Do not infer the absence of a control from the mere existence of a path. A path existing proves nothing.
 8. HIGH-DETAIL DEVELOPER DEBUGGING, BYPASS MECHANICS & DATA LEAKAGE:
    - For every finding, you MUST provide extensive developer guidance:
      - dataLeakage: List the specific types of data exposed (e.g., Passwords, JWT Tokens, Database Records, PII) and a realistic formatted sample (JSON, ENV, or SQL dump) showing the exact leaked structure so developers see the tangible threat.
@@ -1730,8 +1746,27 @@ ${reconData.adminEndpoints?.length > 0
   : '  * No custom admin portals discovered'}
 
 ### DISCOVERED LOGIN & AUTHENTICATION ENDPOINTS (WITH BURP-STYLE PARAMETER INTERCEPTION & FUZZING):
-${reconData.loginEndpoints?.length > 0 
-  ? reconData.loginEndpoints.map(l => `  * [${l.method}] ${l.path} -> Status ${l.status} | Intercepted Fields: [${(l.fields || []).join(', ')}] | CSRF: ${l.hasCsrf ? 'PROTECTED' : 'MISSING'} | Rate-Limiting: ${l.rateLimitDetected ? 'ENFORCED' : 'ABSENT (Burp Intruder Vulnerable)'} | SQLi Fuzz Result: ${l.fuzzResult || 'N/A'}`).join('\n')
+${reconData.loginEndpoints?.length > 0
+  ? reconData.loginEndpoints.map(l => {
+      // Jangan pernah menampilkan "ABSENT" untuk endpoint yang TIDAK dievaluasi.
+      // Path yang tidak sempat di-fuzz (karena loop berhenti setelah 2 handler
+      // terverifikasi) akan terlihat "tidak ada rate limiting" kalau
+      // default-nya ABSENT - itu memancing temuan palsu.
+      const isHandler = l.endpointIsAuthHandler === true;
+      const rateLimit = !isHandler
+        ? 'NOT EVALUATED (bukan handler kredensial)'
+        : l.rateLimitDetected
+        ? 'ENFORCED (HTTP 429 terverifikasi)'
+        : 'ABSENT (diverifikasi tidak ada throttle)';
+      const csrf = !isHandler
+        ? 'NOT EVALUATED'
+        : l.hasCsrf
+        ? 'PROTECTED (token anti-CSRF)'
+        : l.csrfOriginEnforced
+        ? 'PROTECTED (Origin/Sec-Fetch-Site diverifikasi menolak cross-origin)'
+        : 'MISSING (tidak ada token maupun Origin enforcement)';
+      return `  * [${l.method}] ${l.path} -> Status ${l.status} | Intercepted Fields: [${(l.fields || []).join(', ')}] | CSRF: ${csrf} | Rate-Limiting: ${rateLimit} | SQLi Fuzz Result: ${l.fuzzResult || 'N/A'}`;
+    }).join('\n')
   : '  * Standard login endpoints'}
 
 ### ORIGIN & IP ADDRESS EXPOSURE DIAGNOSTIC:
@@ -2547,7 +2582,11 @@ if (!match) return res.status(401).json({ error: 'Invalid credentials' });`,
     }
 
     // 5. Missing Rate Limiting / Susceptible to Burp Intruder Brute-Force
-    const noRateLimit = reconData.loginEndpoints.find(l => !l.rateLimitDetected);
+    // Hanya endpoint yang TERVERIFIKASI sebagai handler kredensial DAN
+    // dievaluasi rate-limit-nya. `!l.rateLimitDetected` saja ikut menangkap
+    // endpoint yang belum di-fuzz (undefined) atau yang ternyata bukan handler
+    // (GET-only/redirect/catch-all) -> temuan palsu.
+    const noRateLimit = reconData.loginEndpoints.find(l => l.endpointIsAuthHandler === true && l.rateLimitDetected === false);
     if (noRateLimit && !rawVulns.some(v => v.title.toLowerCase().includes('rate limit'))) {
       rawVulns.push({
         id: `STRIX-RATELIMIT-${Date.now().toString().slice(-4)}`,

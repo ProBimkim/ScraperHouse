@@ -1,5 +1,6 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import nodeFetch from 'node-fetch';
+import { getMissSignature, classifyAuthEndpoint } from '@/lib/httpProbe';
 
 // --- Proxy Rotation & Stealth Helper for ATO Assessment ---
 const PROXY_LIST_ENV = process.env.PROXY_LIST || process.env.PROXY_URL || '';
@@ -262,25 +263,18 @@ export async function runAccountTakeoverAssessment({
   // POST kredensial yang boleh jadi target audit. Tanpa ini, audit akan
   // menguji halaman login GET-only (405/307) dan menyimpulkan tidak ada
   // rate limiting — false positive.
+  //
+  // Differential check: catch-all middleware membalas 401 JSON yang IDENTIK
+  // dengan path acak. Tanpa pembeda itu, /api/login (path fiktif) dianggap
+  // handler asli dan rate limit yang sebenarnya bekerja tidak pernah teruji.
+  const missSig = await getMissSignature(resilientFetch, baseUrl);
   const validatedAuthEndpoints = [];
   for (const ep of discoveredAuthEndpoints) {
-    try {
-      const probeRes = await resilientFetch(ep.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ username: 'strix_probe', password: 'strix_probe', keyword: 'strix_probe' }),
-        timeoutMs: 4000,
-        redirect: 'manual',
-      });
-      const body = await probeRes.text().catch(() => '');
-      const isHandler = probeRes.status !== 405 && probeRes.status !== 404 && probeRes.status !== 501 &&
-        ![301, 302, 303, 307, 308].includes(probeRes.status) &&
-        !/<html|<!doctype/i.test(body);
-      if (isHandler) {
-        validatedAuthEndpoints.push({ ...ep, verifiedStatus: probeRes.status });
-      }
-    } catch {
-      // Network error: treat as not verified
+    const verdict = await classifyAuthEndpoint(resilientFetch, ep.url, missSig);
+    if (verdict.isReal) {
+      validatedAuthEndpoints.push({ ...ep, verifiedStatus: verdict.status, verifiedReason: verdict.reason });
+    } else {
+      ep.rejectedReason = verdict.reason;
     }
   }
 
