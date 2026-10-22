@@ -145,7 +145,45 @@ node scripts/test_session.mjs → SEMUA LOLOS (9 assertion)
 | `/admin/login` | ❌ HTTP 307 | — | — |
 | `/api/auth/login` | ✅ handler asli | ✅ Origin enforced | ✅ 429 terdeteksi |
 
-Semua temuan false-positive di laporan lama hilang.
+### 4.1 Bukti pembuktian: scan ulang ke produksi
+
+Empat scan DEEP berurutan ke `https://scraperhouse.vercel.app/` dengan kode yang
+ber progressively diperbaiki.Angka rating turun dari **CRITICAL 90 → MEDIUM 12**:
+
+| Scan | Kode yang dipakai | Rating | Skor | Kritis | High | Temuan |
+|---|---|---|---|---|---|---|
+| **1 (laporan asli)** | sebelum perbaikan | CRITICAL | 90 | **4** | 4 | 8 |
+| 2 | + klasifikasi endpoint, 4xx≠crash, XFF≠origin | HIGH | 65 | 0 | 2 | 6 |
+| 3 | + differential probing di ATO & fuzz | MEDIUM | 34 | 0 | 0 | 5 |
+| 4 (final) | + "NOT EVALUATED" ≠ "ABSENT" | **MEDIUM** | **12** | **0** | **0** | **2** |
+
+Temuan akhir (keduanya sah):
+- `INFO` — `Access-Control-Allow-Origin: *` pada halaman login publik
+  (halaman tanpa data sensitif; tidak consequential).
+- `MEDIUM` — tidak ada CAPTCHA/PoW sebagai proteksi bot. Ini rekomendasi
+  hardening yang wajar untuk aplikasi password-tunggal, bukan kelemahan
+  yang bisa dieksploitasi.
+
+Executive summary scan final (kutipan):
+> *"No critical or high-severity vulnerabilities were verified… The
+> /api/auth/login handler demonstrably enforced rate limiting with HTTP 429 and
+> rejected cross-origin requests using Origin/Sec-Fetch-Site validation."*
+
+Bandingtkan dengan scan asli: *"Overall risk is MEDIUM"* di body, tapi header
+menulis *"CRITICAL (90/100)"* — dan 4 temuan kritis semuanya palsu.
+
+### 4.2 Akar masalah false-positive (ringkas)
+
+| Akar masalah | Gejala di laporan asli | Perbaikan |
+|---|---|---|
+| Menguji halaman GET-only (`/login` → 405) | "no rate limiting" | Klasifikasi endpoint sebelum melapor |
+| Menguji path fiktif (`/admin/login` → 307) | "7 endpoint unprotected", tabel brute-force isinya 307 | Differential probing vs path acak |
+| Catch-all 401 ≙ handler asli 401 | ATO menguji `/api/login` (fiktif), bukan `/api/auth/login` | `lib/httpProbe.js` |
+| `!l.rateLimitDetected` menangkap `undefined` | "Missing Rate Limiting on /admin/login" | Syarat `endpointIsAuthHandler === true` **dan** `rateLimitDetected === false` |
+| 4xx (405/401) dihitung sebagai crash | "100% error rate", "Asymmetric DoS CRITICAL" | Pisahkan `rejectedCount` dari `failedCount` |
+| `x-forwarded-for` & WebRTC dianggap origin leak | "WAF Bypass Vector" | Klasifikasi IP klien vs origin vs edge |
+| Rate limit = 429 **atau** 403 | "no rate limit" padahal 403 | Hanya 429 + burst 8 |
+| PROXY_LIST diapit tanda kutip | baseline probe timeout ⇒ status dikira 401 | Strip kutip + fallback signal baru |
 
 ---
 
