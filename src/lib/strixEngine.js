@@ -2139,10 +2139,13 @@ export async function runStrixPentest({
         scanMode,
         instruction,
         summary: {
-          riskRating: 'INFORMATIONAL',
+          // 'SECURE' akan menyesatkan: scan DIHENTIKAN, bukan berarti target
+          // aman. Enum model hanya CRITICAL/HIGH/MEDIUM/LOW/SECURE, jadi
+          // 'LOW' + judul/summary eksplisit adalah yang paling jujur.
+          riskRating: 'LOW',
           riskScore: 0,
           totalVulnerabilities: 0,
-          critical: 0, high: 0, medium: 0, low: 0,
+          critical: 0, high: 0, medium: 0, low: 0, info: 0,
         },
         executiveSummary: `Scan dihentikan pada fase reconnaissance. ${ec.provider} menahan request dari IP pemindai (HTTP ${ec.status}${ec.retryAfter ? `, Retry-After: ${ec.retryAfter}` : ''}). Respons tersebut bukan dari aplikasi, sehingga setiap temuan yang dibuat dari probe lanjutan tidak valid dan sengaja tidak dilaporkan. Tunggu challenge berakhir, jalankan scanner dari IP lain, atau gunakan rotasi proxy untuk pemindaian.`,
         recon: { url: reconData.url, statusCode: reconData.statusCode, server: reconData.server },
