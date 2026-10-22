@@ -637,7 +637,8 @@ export async function runScraper(url, slug) {
     // --- AI Answering Logic Start ---
     try {
       result.steps.push({ step: 'ai_answering', status: 'starting' });
-      const aiAnswers = await withStepTimeout(getAIAnswers(result.questions), 20000, 'AI answering');
+      const batchForInitial = (result.questions || []).slice(0, 10);
+      const aiAnswers = await withStepTimeout(getAIAnswers(batchForInitial, { slug }), 35000, 'AI answering');
       resultDoc.aiAnswers = aiAnswers;
       result.steps.push({ step: 'ai_answering', status: 'ok', count: aiAnswers.length });
     } catch (aiErr) {

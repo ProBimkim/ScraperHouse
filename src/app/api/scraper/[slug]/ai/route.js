@@ -43,8 +43,14 @@ export async function POST(req, { params }) {
     }
 
     // Process a batch of questions
-    const currentBatch = pendingQuestions.slice(0, limit);
-    const newAnswers = await getAIAnswers(currentBatch);
+    // If questions have images, limit batch size to 5 to avoid image count limits and serverless timeout
+    const hasImages = pendingQuestions.some(
+      (q) => q.imageUrl || q.originalImageUrl || q.choices?.some((c) => typeof c === 'object' && (c?.imageUrl || c?.originalImageUrl))
+    );
+    const effectiveLimit = hasImages ? Math.min(limit, 5) : limit;
+
+    const currentBatch = pendingQuestions.slice(0, effectiveLimit);
+    const newAnswers = await getAIAnswers(currentBatch, { slug });
 
     // Merge answers by questionId
     const answerMap = new Map();
