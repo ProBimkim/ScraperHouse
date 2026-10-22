@@ -1,5 +1,7 @@
 import { Groq } from 'groq-sdk';
 
+export const PRIMARY_DIAGRAM_MODEL = 'minimax/minimax-m3.1-flash:free';
+
 /**
  * Initialize Groq client with API key (either from request or .env.local)
  */
@@ -9,6 +11,43 @@ export function getGroqClient(customApiKey) {
     throw new Error('Groq API Key is not configured. Please provide a Groq API Key or set GROQ_API_KEY in .env.local (Get a free key at https://console.groq.com/keys)');
   }
   return new Groq({ apiKey });
+}
+
+/**
+ * Stream OpenRouter completions for architecture diagram generation (Primary AI)
+ */
+export async function createOpenRouterDiagramStream({ prompt, model = PRIMARY_DIAGRAM_MODEL, customApiKey = '' }) {
+  const effectiveKey = (customApiKey && typeof customApiKey === 'string' ? customApiKey.trim() : '')
+    || process.env.OPENROUTER_API_KEY;
+
+  if (!effectiveKey) {
+    throw new Error('OpenRouter API Key is not configured. Please provide an OpenRouter API Key or set OPENROUTER_API_KEY in .env.local');
+  }
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${effectiveKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://github.com/ProBimkim/ScraperHouse',
+      'X-Title': 'GitDiagram Architecture Generator',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      reasoning: { effort: 'low' },
+      temperature: 0.2,
+      max_tokens: 4096,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`OpenRouter API error (${res.status}): ${errorText}`);
+  }
+
+  return res.body;
 }
 
 /**

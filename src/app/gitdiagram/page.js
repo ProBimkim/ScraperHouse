@@ -31,20 +31,30 @@ export default function GitDiagramPage() {
   const [url, setUrl] = useState('');
   const [focus, setFocus] = useState('');
   const [token, setToken] = useState('');
+  const [openrouterApiKey, setOpenrouterApiKey] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('openai/gpt-oss-120b');
+  const [selectedModel, setSelectedModel] = useState('minimax/minimax-m3.1-flash:free');
   const [modelUsed, setModelUsed] = useState('');
   const [showTokenInput, setShowTokenInput] = useState(false);
 
   // Load saved keys from localStorage on mount
   useEffect(() => {
     try {
+      const savedOR = localStorage.getItem('gitdiagram_openrouter_key');
+      if (savedOR) setOpenrouterApiKey(savedOR);
       const savedGroq = localStorage.getItem('gitdiagram_groq_key');
       if (savedGroq) setGroqApiKey(savedGroq);
       const savedGh = localStorage.getItem('gitdiagram_gh_token');
       if (savedGh) setToken(savedGh);
     } catch {}
   }, []);
+
+  const handleSaveOpenRouterKey = (val) => {
+    setOpenrouterApiKey(val);
+    try {
+      localStorage.setItem('gitdiagram_openrouter_key', val);
+    } catch {}
+  };
 
   const handleSaveGroqKey = (val) => {
     setGroqApiKey(val);
@@ -167,6 +177,7 @@ export default function GitDiagramPage() {
           url: url.trim(),
           focus: focus.trim(),
           token: token.trim(),
+          openrouterApiKey: openrouterApiKey.trim(),
           groqApiKey: groqApiKey.trim(),
           selectedModel: selectedModel.trim(),
         }),
@@ -386,7 +397,7 @@ export default function GitDiagramPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
-                        Groq AI Model:
+                        Architecture AI Model:
                       </label>
                       <select
                         className={styles.focusInput}
@@ -394,30 +405,51 @@ export default function GitDiagramPage() {
                         value={selectedModel}
                         onChange={(e) => setSelectedModel(e.target.value)}
                       >
-                        <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (Recommended - Smart Reasoning)</option>
-                        <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Ultra Fast)</option>
-                        <option value="groq/compound">groq/compound (Compound System)</option>
-                        <option value="groq/compound-mini">groq/compound-mini (Lightweight)</option>
+                        <option value="minimax/minimax-m3.1-flash:free">minimax/minimax-m3.1-flash:free (OpenRouter - Primary AI)</option>
+                        <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (Groq Fallback - Smart Reasoning)</option>
+                        <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Groq Fallback - Ultra Fast)</option>
+                        <option value="groq/compound">groq/compound (Groq Fallback - Compound System)</option>
+                        <option value="groq/compound-mini">groq/compound-mini (Groq Fallback - Lightweight)</option>
                       </select>
                       <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
-                        Auto-detects active models and uses sequential fallback if unavailable.
+                        Defaults to Minimax M3.1 Flash on OpenRouter; automatically falls back to Groq if rate-limited.
                       </p>
                     </div>
 
                     <div>
                       <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
-                        Groq AI API Key (Optional / Overrides Server):
+                        OpenRouter API Key (Primary AI - Optional / Overrides Server):
                       </label>
                       <input
                         type="password"
-                        placeholder="Paste Groq API Key (gsk_...) - Saved in browser"
+                        placeholder="Paste OpenRouter Key (sk-or-v1-...) - Saved in browser"
+                        className={styles.focusInput}
+                        style={{ width: '100%' }}
+                        value={openrouterApiKey}
+                        onChange={(e) => handleSaveOpenRouterKey(e.target.value)}
+                      />
+                      <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
+                        Defaults to server environment key. Get a free key at{' '}
+                        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
+                          openrouter.ai/keys
+                        </a>.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: '#cbd5e1', marginBottom: '4px', fontWeight: 600 }}>
+                        Groq AI API Key (Fallback AI - Optional / Overrides Server):
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Paste Groq API Key (gsk_...) - Fallback"
                         className={styles.focusInput}
                         style={{ width: '100%' }}
                         value={groqApiKey}
                         onChange={(e) => handleSaveGroqKey(e.target.value)}
                       />
                       <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
-                        Default uses server key. If server key is expired, paste your own free key. Don't have one?{' '}
+                        Engaged as secondary fallback if OpenRouter is rate-limited. Don't have one?{' '}
                         <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: '#60a5fa', textDecoration: 'underline' }}>
                           Get a free Groq API key
                         </a>.

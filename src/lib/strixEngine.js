@@ -345,18 +345,20 @@ export async function auditWithPuppeteer(targetUrl) {
   return auditResult;
 }
 
-const DEFAULT_MODEL = 'openai/gpt-oss-120b';
-const FALLBACK_MODEL = 'llama-3.3-70b-versatile';
-
+export const PRIMARY_MODEL = 'minimax/minimax-m3.1-flash:free';
 export const OPENROUTER_FALLBACK_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free', // 120B parameter top free model, ultra-fast & highly structured JSON compliant
   'openrouter/free',                        // Dynamic auto-router to the best available free model
 ];
+export const GROQ_FALLBACK_MODELS = [
+  'openai/gpt-oss-120b',
+  'llama-3.3-70b-versatile',
+];
 
 /**
- * Calls OpenRouter Chat Completion API for free model fallback.
+ * Calls OpenRouter Chat Completion API (Primary: minimax/minimax-m3.1-flash:free).
  */
-export async function callOpenRouterCompletion({ messages, model = OPENROUTER_FALLBACK_MODELS[0], maxTokens = 8192, openrouterApiKey = null }) {
+export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL, maxTokens = 8192, openrouterApiKey = null }) {
   const effectiveKey = (openrouterApiKey && typeof openrouterApiKey === 'string' ? openrouterApiKey.trim() : '')
     || process.env.OPENROUTER_API_KEY;
 
@@ -375,6 +377,7 @@ export async function callOpenRouterCompletion({ messages, model = OPENROUTER_FA
     body: JSON.stringify({
       model,
       messages,
+      reasoning: { effort: 'low' },
       response_format: { type: 'json_object' },
       max_tokens: maxTokens,
       temperature: 0.2,
@@ -387,7 +390,7 @@ export async function callOpenRouterCompletion({ messages, model = OPENROUTER_FA
   }
 
   const json = await res.json();
-  const content = json.choices?.[0]?.message?.content;
+  const content = json.choices?.[0]?.message?.content || json.choices?.[0]?.message?.reasoning;
   if (!content) {
     throw new Error(`OpenRouter model ${model} returned empty completion.`);
   }
@@ -1973,7 +1976,6 @@ export async function runStrixPentest({
   // Phase 2: Threat Modeling & Static/Dynamic Inspection
   onProgress({ phase: 'threat_model', message: 'Synthesizing attack surface and evaluating against OWASP Top 10:2025 categories...', progress: 45 });
 
-  const groq = getGroqClient(groqApiKey);
   const systemPrompt = buildStrixSystemPrompt();
   const userPrompt = buildStrixUserPrompt({
     targetType,
@@ -1985,78 +1987,41 @@ export async function runStrixPentest({
     scanMode,
   });
 
-  // Phase 3: AI Pentesting & Exploit Generation
-  onProgress({ phase: 'exploitation', message: 'Running autonomous exploit reasoning: evaluating /admin authorization, .env data leaks & generating PoCs...', progress: 65 });
+  // Phase 3: AI Pentesting & Exploit Generation (Primary: Minimax M3.1 Flash via OpenRouter)
+  onProgress({ phase: 'exploitation', message: 'Running autonomous exploit reasoning (Minimax M3.1 Flash): evaluating attack surface & synthesizing PoCs...', progress: 65 });
 
   let parsedOutput = null;
 
-  // 1. Primary Model Attempt with max_completion_tokens: 8192
+  // 1. PRIMARY AI ATTEMPT: OpenRouter (minimax/minimax-m3.1-flash:free)
   try {
-    const chatCompletion = await groq.chat.completions.create({
+    console.log(`[Strix Engine] Querying Primary AI: OpenRouter (${PRIMARY_MODEL})...`);
+    onProgress({ phase: 'exploitation', message: `Querying primary AI engine (${PRIMARY_MODEL})...`, progress: 70 });
+    const openRouterRaw = await callOpenRouterCompletion({
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      model: DEFAULT_MODEL,
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      max_completion_tokens: 8192,
+      model: PRIMARY_MODEL,
+      maxTokens: 8192,
+      openrouterApiKey,
     });
 
-    const rawContent = chatCompletion.choices[0]?.message?.content;
-    if (rawContent) {
-      parsedOutput = parseOrRepairJson(rawContent);
-    }
-  } catch (err) {
-    console.warn(`[Strix Engine] Primary model (${DEFAULT_MODEL}) encounter: ${err.message}`);
-    // Recover failed_generation inside 400 json_validate_failed if emitted by Groq
-    const failedGen = extractFailedGeneration(err);
-    if (failedGen) {
-      console.log(`[Strix Engine] Successfully extracted failed_generation (${failedGen.length} chars). Repairing cut-off JSON...`);
-      parsedOutput = parseOrRepairJson(failedGen);
-      if (parsedOutput) {
-        console.log(`[Strix Engine] Successfully recovered ${parsedOutput.vulnerabilities?.length || 0} findings from failed_generation!`);
+    if (openRouterRaw) {
+      parsedOutput = parseOrRepairJson(openRouterRaw);
+      if (parsedOutput && Array.isArray(parsedOutput.vulnerabilities) && parsedOutput.vulnerabilities.length > 0) {
+        console.log(`[Strix Engine] Primary model (${PRIMARY_MODEL}) successfully generated ${parsedOutput.vulnerabilities.length} findings!`);
       }
     }
+  } catch (primaryErr) {
+    console.warn(`[Strix Engine] Primary AI (${PRIMARY_MODEL}) encounter: ${primaryErr.message}`);
   }
 
-  // 2. Fallback Model Attempt if Primary failed and could not be recovered
-  if (!parsedOutput || !Array.isArray(parsedOutput.vulnerabilities)) {
-    try {
-      console.log(`[Strix Engine] Attempting fallback model (${FALLBACK_MODEL}) with 8192 completion tokens...`);
-      onProgress({ phase: 'exploitation', message: `Refining telemetry with fallback model (${FALLBACK_MODEL})...`, progress: 75 });
-      const fallbackCompletion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        model: FALLBACK_MODEL,
-        response_format: { type: 'json_object' },
-        temperature: 0.2,
-        max_completion_tokens: 8192,
-      });
-
-      const fallbackContent = fallbackCompletion.choices[0]?.message?.content;
-      if (fallbackContent) {
-        parsedOutput = parseOrRepairJson(fallbackContent);
-      }
-    } catch (fallbackErr) {
-      console.warn(`[Strix Engine] Fallback model (${FALLBACK_MODEL}) encounter: ${fallbackErr.message}`);
-      const fallbackFailedGen = extractFailedGeneration(fallbackErr);
-      if (fallbackFailedGen) {
-        parsedOutput = parseOrRepairJson(fallbackFailedGen);
-      }
-    }
-  }
-
-  // 3. OpenRouter Free AI Fallback (nvidia/nemotron-3-super-120b-a12b:free, openrouter/free)
-  if (!parsedOutput || !Array.isArray(parsedOutput.vulnerabilities)) {
-    console.log('[Strix Engine] Groq completion unavailable. Engaging OpenRouter Free AI fallback...');
-    onProgress({ phase: 'exploitation', message: 'Groq unavailable or rate-limited. Activating OpenRouter Free AI fallback (Nvidia Nemotron 120B)...', progress: 78 });
-
+  // 2. OpenRouter Secondary Models Fallback (if Primary failed or gave empty vulnerabilities)
+  if (!parsedOutput || !Array.isArray(parsedOutput.vulnerabilities) || parsedOutput.vulnerabilities.length === 0) {
     for (const orModel of OPENROUTER_FALLBACK_MODELS) {
       try {
-        console.log(`[Strix Engine] Querying OpenRouter model: ${orModel}...`);
+        console.log(`[Strix Engine] Querying secondary OpenRouter fallback model: ${orModel}...`);
+        onProgress({ phase: 'exploitation', message: `Attempting secondary OpenRouter model (${orModel})...`, progress: 74 });
         const openRouterRaw = await callOpenRouterCompletion({
           messages: [
             { role: 'system', content: systemPrompt },
@@ -2071,13 +2036,64 @@ export async function runStrixPentest({
           const repaired = parseOrRepairJson(openRouterRaw);
           if (repaired && Array.isArray(repaired.vulnerabilities) && repaired.vulnerabilities.length > 0) {
             parsedOutput = repaired;
-            console.log(`[Strix Engine] OpenRouter (${orModel}) successfully generated ${parsedOutput.vulnerabilities.length} findings!`);
+            console.log(`[Strix Engine] OpenRouter fallback (${orModel}) successfully generated ${parsedOutput.vulnerabilities.length} findings!`);
             break;
           }
         }
       } catch (orErr) {
-        console.warn(`[Strix Engine] OpenRouter model (${orModel}) error: ${orErr.message}`);
+        console.warn(`[Strix Engine] OpenRouter fallback (${orModel}) error: ${orErr.message}`);
       }
+    }
+  }
+
+  // 3. GROQ FALLBACK: Engaged ONLY if OpenRouter is unavailable or exhausted
+  if (!parsedOutput || !Array.isArray(parsedOutput.vulnerabilities) || parsedOutput.vulnerabilities.length === 0) {
+    console.log('[Strix Engine] OpenRouter completion unavailable. Engaging Groq AI fallback...');
+    onProgress({ phase: 'exploitation', message: 'OpenRouter unavailable. Engaging Groq AI fallback...', progress: 78 });
+
+    try {
+      const groq = getGroqClient(groqApiKey);
+
+      for (const groqModel of GROQ_FALLBACK_MODELS) {
+        try {
+          console.log(`[Strix Engine] Querying Groq fallback model: ${groqModel}...`);
+          onProgress({ phase: 'exploitation', message: `Refining telemetry with Groq fallback model (${groqModel})...`, progress: 80 });
+
+          const chatCompletion = await groq.chat.completions.create({
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            model: groqModel,
+            response_format: { type: 'json_object' },
+            temperature: 0.2,
+            max_completion_tokens: 8192,
+          });
+
+          const rawContent = chatCompletion.choices[0]?.message?.content;
+          if (rawContent) {
+            const repaired = parseOrRepairJson(rawContent);
+            if (repaired && Array.isArray(repaired.vulnerabilities) && repaired.vulnerabilities.length > 0) {
+              parsedOutput = repaired;
+              console.log(`[Strix Engine] Groq fallback (${groqModel}) successfully generated ${parsedOutput.vulnerabilities.length} findings!`);
+              break;
+            }
+          }
+        } catch (groqModelErr) {
+          console.warn(`[Strix Engine] Groq fallback (${groqModel}) encounter: ${groqModelErr.message}`);
+          const failedGen = extractFailedGeneration(groqModelErr);
+          if (failedGen) {
+            const recovered = parseOrRepairJson(failedGen);
+            if (recovered && Array.isArray(recovered.vulnerabilities) && recovered.vulnerabilities.length > 0) {
+              parsedOutput = recovered;
+              console.log(`[Strix Engine] Successfully recovered ${parsedOutput.vulnerabilities.length} findings from Groq failed_generation!`);
+              break;
+            }
+          }
+        }
+      }
+    } catch (groqInitErr) {
+      console.warn('[Strix Engine] Groq client initialization failed or no Groq key:', groqInitErr.message);
     }
   }
 

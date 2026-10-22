@@ -81,6 +81,16 @@ export default function StrixPentestPage() {
   const [customOpenRouterKey, setCustomOpenRouterKey] = useState('');
   const [customGithubToken, setCustomGithubToken] = useState('');
 
+  // Load saved keys from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedOR = localStorage.getItem('strix_openrouter_key');
+      if (savedOR) setCustomOpenRouterKey(savedOR);
+      const savedGroq = localStorage.getItem('strix_groq_key');
+      if (savedGroq) setCustomGroqKey(savedGroq);
+    } catch {}
+  }, []);
+
   // Execution & Progress state
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -1008,27 +1018,33 @@ export default function StrixPentestPage() {
                     </div>
 
                     <div>
-                      <label className={styles.formLabel}>Custom Groq API Key (Optional)</label>
-                      <input
-                        type="password"
-                        className={styles.textInput}
-                        style={{ paddingLeft: '14px' }}
-                        placeholder="gsk_... (Defaults to system env)"
-                        value={customGroqKey}
-                        onChange={(e) => setCustomGroqKey(e.target.value)}
-                        disabled={isScanning}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={styles.formLabel}>OpenRouter API Key (Fallback AI - Optional)</label>
+                      <label className={styles.formLabel}>OpenRouter API Key (Primary AI - minimax/minimax-m3.1-flash:free)</label>
                       <input
                         type="password"
                         className={styles.textInput}
                         style={{ paddingLeft: '14px' }}
                         placeholder="sk-or-v1-... (Defaults to system env free tier)"
                         value={customOpenRouterKey}
-                        onChange={(e) => setCustomOpenRouterKey(e.target.value)}
+                        onChange={(e) => {
+                          setCustomOpenRouterKey(e.target.value);
+                          try { localStorage.setItem('strix_openrouter_key', e.target.value); } catch {}
+                        }}
+                        disabled={isScanning}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={styles.formLabel}>Custom Groq API Key (Fallback AI - Optional)</label>
+                      <input
+                        type="password"
+                        className={styles.textInput}
+                        style={{ paddingLeft: '14px' }}
+                        placeholder="gsk_... (Defaults to system env fallback)"
+                        value={customGroqKey}
+                        onChange={(e) => {
+                          setCustomGroqKey(e.target.value);
+                          try { localStorage.setItem('strix_groq_key', e.target.value); } catch {}
+                        }}
                         disabled={isScanning}
                       />
                     </div>

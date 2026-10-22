@@ -111,9 +111,12 @@ CLOUDINARY_API_SECRET="xxxxxxxxx"
 PROXY_LIST="http://xxxxxxxxx:xxxxxxxxx@xxxxxxxxx:xxxxxxxxx,http://xxxxxxxxx:xxxxxxxxx@xxxxxxxxx:xxxxxxxxx"
 
 # ==============================================================================
-# GROQ AI CONFIGURATION (FOR GITDIAGRAM ARCHITECTURE VISUALIZER)
+# AI CONFIGURATION (OPENROUTER PRIMARY & GROQ FALLBACK)
 # ==============================================================================
-# Groq API key used for real-time Mermaid architecture graph generation
+# OpenRouter API key - Primary AI (Default model: minimax/minimax-m3.1-flash:free)
+OPENROUTER_API_KEY="sk-or-v1-xxxxxxxxx"
+
+# Groq API key - Fallback AI (Used when OpenRouter is rate-limited or unavailable)
 GROQ_API_KEY="gsk_xxxxxxxxx"
 
 # ==============================================================================
@@ -132,7 +135,8 @@ GITHUB_TOKEN="ghp_xxxxxxxxx"
 - npm, yarn, or pnpm
 - A MongoDB cluster or local instance
 - A Cloudinary account (free tier works)
-- *(Optional)* A Groq API key (for GitDiagram AI generation)
+- An OpenRouter API key (Primary AI: `minimax/minimax-m3.1-flash:free`)
+- *(Optional)* A Groq API key (Fallback AI)
 - *(Optional)* A GitHub personal access token (for higher GitHub API limits)
 
 ### 2. Installation
