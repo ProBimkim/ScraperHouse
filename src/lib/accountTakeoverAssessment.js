@@ -3,11 +3,18 @@ import nodeFetch from 'node-fetch';
 
 // --- Proxy Rotation & Stealth Helper for ATO Assessment ---
 const PROXY_LIST_ENV = process.env.PROXY_LIST || process.env.PROXY_URL || '';
-const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim()).filter(p => p.length > 0);
+// Strip surrounding quotes: .env values are often wrapped ("http://..."),
+// which would make every proxy URL invalid and fail all requests.
+const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim().replace(/^["']|["']$/g, '')).filter(p => p.length > 0);
+
+// Circuit breaker: skip proxies that failed to connect for the rest of the
+// process, so one dead entry cannot add a full timeout to every request.
+const DEAD_PROXIES = new Set();
 
 function getRandomProxy() {
-  if (PROXIES.length === 0) return null;
-  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+  const alive = PROXIES.filter(p => !DEAD_PROXIES.has(p));
+  if (alive.length === 0) return null;
+  return alive[Math.floor(Math.random() * alive.length)];
 }
 
 const USER_AGENTS = [
@@ -29,26 +36,59 @@ async function resilientFetch(url, options = {}) {
     ...(options.headers || {}),
   };
 
+  // timeoutMs is our own option, not a fetch() option - strip it and honour
+  // it with a real AbortController so a dead proxy cannot hang the audit.
+  const { timeoutMs = 6000, signal: callerSignal, ...fetchOptions } = options;
+
   if (!activeProxy) {
-    return await fetch(url, { ...options, headers: mergedHeaders });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onCallerAbort = () => controller.abort();
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+    try {
+      return await fetch(url, { ...fetchOptions, headers: mergedHeaders, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+      if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+    }
   }
 
   try {
     const proxyAgent = new HttpsProxyAgent(activeProxy);
     const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 6000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onCallerAbort = () => controller.abort();
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
 
-    const res = await nodeFetch(url, {
-      ...options,
-      headers: mergedHeaders,
-      agent: proxyAgent,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return res;
+    try {
+      const res = await nodeFetch(url, {
+        ...fetchOptions,
+        headers: mergedHeaders,
+        agent: proxyAgent,
+        signal: controller.signal,
+      });
+      return res;
+    } finally {
+      clearTimeout(timeoutId);
+      if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+    }
   } catch {
-    return await fetch(url, { ...options, headers: mergedHeaders });
+    // Proxy failed - fall back to a direct connection so one dead proxy entry
+    // cannot fail the whole assessment, and stop using this proxy afterwards.
+    DEAD_PROXIES.add(activeProxy);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...fetchOptions, headers: mergedHeaders, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -73,6 +113,8 @@ const DEFAULT_DICTIONARY_CREDENTIALS = [
 
 // Endpoint API Autentikasi Pendukung / Mobile yang Sering Kurang Terlindungi
 const COMMON_AUTH_API_ENDPOINTS = [
+  { path: '/api/auth/login', type: 'REST Auth Login Handler' },
+  { path: '/api/login', type: 'REST API Login Handler' },
   { path: '/api/v1/auth/login', type: 'REST API v1 Login' },
   { path: '/api/auth/signin', type: 'OAuth/Session Auth Sign-In' },
   { path: '/api/v1/login', type: 'Legacy Backend Login' },
@@ -153,6 +195,24 @@ export async function runAccountTakeoverAssessment({
   }
 
   // Probe API endpoints pendukung
+  // Differential probing: a path only counts as "existing" if it responds
+  // differently from a random non-existent path on the same host. Otherwise
+  // every unmatched path that returns a blanket 401/404 gets reported as a
+  // real unprotected auth endpoint (a pure false positive).
+  const randomMissPath = `/api/__strix_probe_${Math.random().toString(36).slice(2, 10)}`;
+  let missSignature = '';
+  try {
+    const missRes = await resilientFetch(`${baseUrl}${randomMissPath}`, {
+      method: 'OPTIONS',
+      headers: { 'Accept': 'application/json' },
+      timeoutMs: 3000,
+    });
+    const missBody = await missRes.text().catch(() => '');
+    missSignature = `${missRes.status}:${missBody.slice(0, 120)}`;
+  } catch {
+    missSignature = 'network-error';
+  }
+
   for (const apiEp of COMMON_AUTH_API_ENDPOINTS) {
     const fullApiUrl = `${baseUrl}${apiEp.path}`;
     try {
@@ -162,7 +222,11 @@ export async function runAccountTakeoverAssessment({
         timeoutMs: 3000,
       });
 
-      if (probeRes.status < 404 || probeRes.status === 405) {
+      const probeBody = await probeRes.text().catch(() => '');
+      const signature = `${probeRes.status}:${probeBody.slice(0, 120)}`;
+
+      // Must be distinguishable from the random-miss baseline to count as real
+      if (signature !== missSignature && probeRes.status !== 404) {
         if (!discoveredAuthEndpoints.some(e => e.path === apiEp.path)) {
           discoveredAuthEndpoints.push({
             path: apiEp.path,
@@ -194,7 +258,39 @@ export async function runAccountTakeoverAssessment({
     });
   }
 
-  const primaryTargetEndpoint = discoveredAuthEndpoints[0];
+  // Validasi kandidat endpoint: hanya handler yang benar-benar memproses
+  // POST kredensial yang boleh jadi target audit. Tanpa ini, audit akan
+  // menguji halaman login GET-only (405/307) dan menyimpulkan tidak ada
+  // rate limiting — false positive.
+  const validatedAuthEndpoints = [];
+  for (const ep of discoveredAuthEndpoints) {
+    try {
+      const probeRes = await resilientFetch(ep.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ username: 'strix_probe', password: 'strix_probe', keyword: 'strix_probe' }),
+        timeoutMs: 4000,
+        redirect: 'manual',
+      });
+      const body = await probeRes.text().catch(() => '');
+      const isHandler = probeRes.status !== 405 && probeRes.status !== 404 && probeRes.status !== 501 &&
+        ![301, 302, 303, 307, 308].includes(probeRes.status) &&
+        !/<html|<!doctype/i.test(body);
+      if (isHandler) {
+        validatedAuthEndpoints.push({ ...ep, verifiedStatus: probeRes.status });
+      }
+    } catch {
+      // Network error: treat as not verified
+    }
+  }
+
+  // Gunakan hanya endpoint yang tervalidasi; jika tidak ada, fallback ke
+  // endpoint asli (untuk reporting transparan).
+  const effectiveAuthEndpoints = validatedAuthEndpoints.length > 0
+    ? validatedAuthEndpoints
+    : discoveredAuthEndpoints;
+
+  const primaryTargetEndpoint = effectiveAuthEndpoints[0];
 
   // 3. Request Profiling: Analisis Parameter HTTP, Form Fields, dan CSRF
   const requestProfiling = {
@@ -210,12 +306,13 @@ export async function runAccountTakeoverAssessment({
       secure: false,
       sameSite: 'None',
     },
-    monitoredEndpoints: discoveredAuthEndpoints.map(e => ({
+    monitoredEndpoints: effectiveAuthEndpoints.map(e => ({
       path: e.path,
       type: e.source,
       method: e.method,
       csrfProtected: e.hasCsrf,
       isApiEndpoint: Boolean(e.isMobileApi || e.path.startsWith('/api')),
+      verified: Boolean(e.verifiedStatus),
     })),
   };
 
@@ -295,10 +392,13 @@ export async function runAccountTakeoverAssessment({
     testDetails: '',
   };
 
-  // Uji 1: Burst 4 request dari single client IP
+  // Uji 1: Burst 8 request dari single client IP
+  // 8 (bukan 4) agar limiter dengan ambang 5-per-window benar-benar terpicu.
+  // Hanya HTTP 429 yang dihitung sebagai throttle; 403 adalah blokir CSRF/WAF
+  // yang kontrol berbeda dan tidak boleh disamakan dengan rate limiting.
   let singleIpBlocked = false;
   let burstCodes = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 8; i++) {
     try {
       const bRes = await resilientFetch(primaryTargetEndpoint.url, {
         method: 'POST',
@@ -310,7 +410,7 @@ export async function runAccountTakeoverAssessment({
         timeoutMs: 3500,
       });
       burstCodes.push(bRes.status);
-      if (bRes.status === 429 || bRes.status === 403) {
+      if (bRes.status === 429) {
         singleIpBlocked = true;
         break;
       }
@@ -363,6 +463,10 @@ export async function runAccountTakeoverAssessment({
     rateLimitingEvaluation.wafDistributedDetection = 'Rentang Bahaya: Tidak ada Rate Limiting global maupun per-IP yang aktif.';
     rateLimitingEvaluation.testDetails = 'Sistem rentan terhadap serangan terdistribusi maupun serangan dari alamat IP tunggal.';
   } else if (singleIpBlocked && !distributedBlocked) {
+    // Single-IP diblokir tapi multi-IP lolos -> memang ada celah distributed evasion.
+    // Tapi X-Forwarded-For yang dipalsukan hanya terbukti bekerja bila server
+    // mempercayai header tersebut; jika platform (Vercel/Cloudflare) menimpanya,
+    // hasil ini adalah artefak pengujian, bukan kerentanan nyata.
     rateLimitingEvaluation.distributedEvasionSusceptible = true;
     rateLimitingEvaluation.wafDistributedDetection = 'Vulnerable to Distributed Evasion: Pembatasan hanya berbasis IP tunggal, sehingga penyerang dengan proxy pool (rotasi IP) dapat melewati threshold WAF.';
     rateLimitingEvaluation.testDetails = 'WAF/Aplikasi memblokir IP tunggal, namun lolos saat request disimulasikan dari alamat IP berbeda.';
@@ -453,13 +557,18 @@ export async function runAccountTakeoverAssessment({
 
   // 7. Evaluasi Vektor Kerentanan Khusus (Unprotected APIs & Anomaly Evasion)
   const apiVulnerabilityVectors = [];
-  const unprotectedApiList = requestProfiling.monitoredEndpoints.filter(e => e.isApiEndpoint);
+  // Hanya endpoint yang benar-benar tervalidasi sebagai handler kredensial
+  // yang relevan. Keberadaan endpoint API saja BUKAN kerentanan — yang relevan
+  // adalah endpoint yang menerima kredensial tanpa proteksi rate-limit/CSRF.
+  const unprotectedApiList = requestProfiling.monitoredEndpoints.filter(e =>
+    e.isApiEndpoint && e.verified && !rateLimitingEvaluation.singleIpBurstThrottled
+  );
 
   if (unprotectedApiList.length > 0) {
     apiVulnerabilityVectors.push({
       vector: 'Unprotected / Mobile API Endpoints',
-      severity: 'HIGH',
-      description: `Ditemukan ${unprotectedApiList.length} endpoint API autentikasi pendukung (${unprotectedApiList.map(e => e.path).join(', ')}). Sering kali API mobile/backend tidak dilengkapi validasi CSRF, CAPTCHA, maupun rate limiting seketat portal web utama.`,
+      severity: 'MEDIUM',
+      description: `Ditemukan ${unprotectedApiList.length} endpoint API autentikasi pendukung yang terverifikasi memproses kredensial tanpa rate limiting (${unprotectedApiList.map(e => e.path).join(', ')}). Endpoint API mobile/backend perlu kontrol yang setara dengan portal web utama.`,
       status: 'EXPOSED_VECTOR'
     });
   }
@@ -714,7 +823,7 @@ export async function runAccountTakeoverAssessment({
     });
   }
 
-  if (!rateLimitingEvaluation.singleIpBurstThrottled) {
+  if (!rateLimitingEvaluation.singleIpBurstThrottled && primaryTargetEndpoint.verifiedStatus) {
     apiVulnerabilityVectors.push({
       vector: 'Dictionary Brute-Force Susceptibility (Missing Rate-Limiting)',
       severity: 'HIGH',
@@ -725,10 +834,14 @@ export async function runAccountTakeoverAssessment({
   }
 
   // 9. Pencatatan Temuan dan Remediasi (Vulnerability Logging & Action Items)
+  // Rate: CRITICAL hanya dengan bukti nyata (kredensial valid / akses tanpa auth).
+  // Tanpa bukti itu, CAPTCHA yang tidak ada + rate limit yang bekerja = HIGH, bukan CRITICAL.
+  const hasVerifiedCompromise = discoveredAdminCredentials.length > 0 ||
+    apiVulnerabilityVectors.some(v => v.status === 'VERIFIED_VULNERABLE' || v.status === 'VERIFIED_EXPOSURE');
+
   const overallAtoRisk =
-    discoveredAdminCredentials.length > 0 ? 'CRITICAL' :
-    (rateLimitingEvaluation.distributedEvasionSusceptible && !botProtectionEvaluation.captchaDetected) ? 'CRITICAL' :
-    (rateLimitingEvaluation.distributedEvasionSusceptible || responseAnalysis.usernameEnumerationVulnerable || apiVulnerabilityVectors.length >= 2) ? 'HIGH' :
+    hasVerifiedCompromise ? 'CRITICAL' :
+    (!rateLimitingEvaluation.singleIpBurstThrottled || responseAnalysis.usernameEnumerationVulnerable) ? 'HIGH' :
     apiVulnerabilityVectors.length > 0 ? 'MODERATE' : 'LOW';
 
   const developerRemediationPlan = [
@@ -760,13 +873,13 @@ export async function runAccountTakeoverAssessment({
   ];
 
   const executiveSummary =
-    discoveredAdminCredentials.length > 0
+    hasVerifiedCompromise
       ? `PERINGATAN KRITIS ATO: Terkonfirmasi ${discoveredAdminCredentials.length} kredensial administratif valid atau akses langsung tanpa otentikasi pada endpoint target (${primaryTargetEndpoint.path}). Akun target dapat langsung diambil alih!`
-      : overallAtoRisk === 'CRITICAL'
-      ? 'PERINGATAN KRITIS ATO: Sistem autentikasi rentan terhadap serangan Account Takeover berbasis Distributed Rate Limit Evasion dan ketiadaan proteksi bot (CAPTCHA). Mekanisme pertahanan belum memadai untuk menahan lalu lintas login otomatis.'
       : overallAtoRisk === 'HIGH'
-      ? 'PERINGATAN TINGGI ATO: Ditemukan celah pada pembatasan laju akses atau pembocoran username enumeration (CWE-204) yang dapat dimanfaatkan penyerang untuk menyaring sasaran akun valid.'
-      : 'EVALUASI KETAHANAN AUTENTIKASI: Sistem memiliki kontrol autentikasi dasar, namun disarankan menerapkan MFA dan rate limiting terpusat untuk memperkuat ketahanan terhadap credential spraying.';
+      ? `PERINGATAN TINGGI ATO: Ditemukan celah pada pembatasan laju akses atau pembocoran username enumeration (CWE-204) yang dapat dimanfaatkan penyerang untuk menyaring sasaran akun valid.`
+      : overallAtoRisk === 'MODERATE'
+      ? `EVALUASI KETAHANAN AUTENTIKASI: Kontrol dasar rate limiting terdeteksi aktif. Tidak ada bukti akses tanpa autentikasi maupun kredensial valid yang berhasil ditebus. Disarankan menambahkan MFA sebagai penguat.`
+      : 'EVALUASI KETAHANAN AUTENTIKASI: Sistem memiliki kontrol autentikasi dasar yang berfungsi (rate limiting aktif, tidak ada kebocoran enumerasi akun). Disarankan menerapkan MFA dan rate limiting terpusat untuk memperkuat ketahanan terhadap credential spraying.';
 
   return {
     executed: true,

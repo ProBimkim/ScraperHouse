@@ -17,11 +17,23 @@ import {
 
 // --- IP Rotating Proxy & Stealth Configuration ---
 const PROXY_LIST_ENV = process.env.PROXY_LIST || process.env.PROXY_URL || '';
-const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim()).filter(p => p.length > 0);
+// Strip surrounding quotes: .env values are often wrapped ("http://..."),
+// which would make every proxy URL invalid and fail all requests.
+const PROXIES = PROXY_LIST_ENV.split(',').map(p => p.trim().replace(/^["']|["']$/g, '')).filter(p => p.length > 0);
+
+// Circuit breaker: a proxy that failed to connect is skipped for the rest of
+// the process. Without this, one dead proxy entry costs every single request
+// a full timeout before falling back to a direct connection.
+const DEAD_PROXIES = new Set();
 
 export function getRandomProxy() {
-  if (PROXIES.length === 0) return null;
-  return PROXIES[Math.floor(Math.random() * PROXIES.length)];
+  const alive = PROXIES.filter(p => !DEAD_PROXIES.has(p));
+  if (alive.length === 0) return null;
+  return alive[Math.floor(Math.random() * alive.length)];
+}
+
+export function markProxyDead(proxy) {
+  if (proxy) DEAD_PROXIES.add(proxy);
 }
 
 const USER_AGENTS = [
@@ -47,27 +59,64 @@ export async function resilientFetch(url, options = {}) {
     ...(options.headers || {}),
   };
 
+  // timeoutMs is our own option, not a fetch() option - strip it before
+  // passing the rest through, and honour it with a real AbortController so a
+  // slow proxy can never hang the whole scan.
+  const { timeoutMs = 8000, signal: callerSignal, ...fetchOptions } = options;
+
   if (!activeProxy) {
-    return await fetch(url, { ...options, headers: mergedHeaders });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onCallerAbort = () => controller.abort();
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+    try {
+      return await fetch(url, { ...fetchOptions, headers: mergedHeaders, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+      if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+    }
   }
 
   try {
     const proxyAgent = new HttpsProxyAgent(activeProxy);
     const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 8000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onCallerAbort = () => controller.abort();
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
 
-    const res = await nodeFetch(url, {
-      ...options,
-      headers: mergedHeaders,
-      agent: proxyAgent,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return res;
+    try {
+      const res = await nodeFetch(url, {
+        ...fetchOptions,
+        headers: mergedHeaders,
+        agent: proxyAgent,
+        signal: controller.signal,
+      });
+      return res;
+    } finally {
+      clearTimeout(timeoutId);
+      if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+    }
   } catch (err) {
-    console.warn(`[Strix Engine] Proxy fetch failed via ${activeProxy} for ${url} (${err.message}). Falling back to direct connection.`);
-    return await fetch(url, { ...options, headers: mergedHeaders });
+    // Proxy path failed (dead proxy, bad credentials, timeout) - retry direct
+    // so a single broken proxy entry cannot fail the entire scan.
+    // Redact credentials: the proxy URL embeds username:password and the
+    // message lands in server logs.
+    const safeProxy = activeProxy.replace(/\/\/[^@]*@/, '//***@');
+    console.warn(`[Strix Engine] Proxy fetch failed via ${safeProxy} for ${url} (${err.message}). Falling back to direct connection.`);
+    markProxyDead(activeProxy);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...fetchOptions, headers: mergedHeaders, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -597,6 +646,8 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     sqlErrorEvidence: null,
     interceptedRequest: null,
     sampleResponseSnippet: null,
+    endpointIsAuthHandler: false, // NEW: POST endpoint actually processes credentials?
+    csrfOriginEnforced: false,     // NEW: cross-origin POST rejected?
   };
 
   const targetEndpoint = `${baseUrl}${loginPath}`;
@@ -628,6 +679,8 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
 
   // 2. Baseline Probe (captures normal failure behavior)
   let baselineStatus = 401;
+  let baselineBody = '';
+  let baselineOk = false;
   try {
     const baseController = new AbortController();
     const bTimeout = setTimeout(() => baseController.abort(), 4000);
@@ -646,8 +699,54 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
     });
     clearTimeout(bTimeout);
     baselineStatus = baseRes.status;
+    baselineBody = await baseRes.text().catch(() => '');
+    baselineOk = true;
   } catch {
-    // Continue
+    // Network error / timeout: baseline is UNKNOWN, not "401".
+  }
+
+  // 2b. Endpoint Classification
+  // A POST to a GET-only page (405), a missing route (404) or a redirect-to-login
+  // (307/302) means this path is NOT a credential-processing endpoint.
+  // Rate-limit / CSRF findings on such a path are meaningless false positives.
+  const isMethodRejected = baselineStatus === 405 || baselineStatus === 501;
+  const isNotFound = baselineStatus === 404;
+  const isRedirect = [301, 302, 303, 307, 308].includes(baselineStatus);
+  const looksLikeHtml = /<html|<!doctype/i.test(baselineBody);
+  diagnosis.endpointIsAuthHandler = baselineOk && !isMethodRejected && !isNotFound && !isRedirect && !looksLikeHtml;
+
+  if (!diagnosis.endpointIsAuthHandler) {
+    diagnosis.sampleResponseSnippet = baselineOk
+      ? `HTTP ${baselineStatus} — endpoint bukan handler kredensial (method/path tidak memproses login).`
+      : `Probe baseline gagal (timeout/network) — status endpoint tidak dapat diverifikasi, rate-limit/CSRF tidak dievaluasi.`;
+    return diagnosis;
+  }
+
+  // 2c. Cross-Origin (CSRF) Enforcement Probe
+  // Origin/Referer/Sec-Fetch-Site validation is a valid CSRF defence for
+  // JSON APIs that never use ambient cookie auth on the credential POST.
+  try {
+    const csrfController = new AbortController();
+    const cTimeout = setTimeout(() => csrfController.abort(), 4000);
+    const csrfRes = await resilientFetch(targetEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Strix-Pentest/2.0 (CSRF Origin Probe)',
+        'Origin': 'https://attacker.invalid',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      body: JSON.stringify({
+        [userField]: 'csrf_probe@probe.internal',
+        [passField]: 'csrf_probe_password',
+      }),
+      signal: csrfController.signal,
+      redirect: 'manual',
+    });
+    clearTimeout(cTimeout);
+    diagnosis.csrfOriginEnforced = csrfRes.status === 403 || csrfRes.status === 401;
+  } catch {
+    // Network error: leave enforced=false (unknown)
   }
 
   // 3. Automated Payload Fuzzing (Burp Intruder style): SQL Injection Tautology & Bypass Test
@@ -741,15 +840,17 @@ export async function fuzzLoginSecurity(baseUrl, loginPath, formHtml = '') {
   }
 
   // 5. Rate Limiting Check (Simulating Burp Intruder rapid requests)
+  // Only HTTP 429 counts as rate limiting. A 403 is a WAF/CSRF block, which is
+  // a different control. 8 attempts so a 5-attempt limiter actually trips.
   try {
     let hitRateLimit = false;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 8; i++) {
       const rlRes = await resilientFetch(targetEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [userField]: `fuzz_test_${i}@probe.internal`, [passField]: '123456' }),
       });
-      if (rlRes.status === 429 || rlRes.status === 403) {
+      if (rlRes.status === 429) {
         hitRateLimit = true;
         break;
       }
@@ -913,10 +1014,12 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
     }
 
     // Inspect headers for Origin Server IP leaks & Internal Subnet disclosures
+    // NOTE: x-forwarded-for / x-real-ip reflect the CLIENT's IP, not the
+    // origin server's. Treating them as an origin leak produces a fabricated
+    // "WAF bypass" finding on every CDN-fronted app.
     const ipHeadersToCheck = [
-      'x-real-ip', 'x-origin-ip', 'x-backend-server', 'x-server-ip', 
-      'x-forwarded-for', 'x-forwarded-server', 'x-host', 'server-ip', 
-      'x-backend-host', 'x-proxy-id'
+      'x-origin-ip', 'x-backend-server', 'x-server-ip',
+      'x-forwarded-server', 'server-ip', 'x-backend-host', 'x-proxy-id'
     ];
     for (const hKey of ipHeadersToCheck) {
       const val = headerObj[hKey];
@@ -1017,6 +1120,44 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
     }
   }
 
+  // API auth handlers are usually only referenced from JS bundles, not from
+  // the served HTML, so HTML-only discovery misses them entirely. Probe the
+  // common ones and keep only those that behave differently from a random
+  // non-existent path (differential probe -> no phantom endpoints).
+  const API_AUTH_CANDIDATES = [
+    '/api/auth/login', '/api/login', '/api/v1/auth/login', '/api/auth/signin',
+    '/api/v1/login', '/auth/v1/token', '/api/mobile/v1/auth', '/api/users/login',
+  ];
+  let apiMissSignature = '';
+  try {
+    const missRes = await resilientFetch(
+      `${new URL(normalizedUrl).origin}/api/__strix_miss_${Math.random().toString(36).slice(2, 9)}`,
+      { method: 'OPTIONS', headers: { 'Accept': 'application/json' }, redirect: 'manual' }
+    );
+    const missBody = await missRes.text().catch(() => '');
+    apiMissSignature = `${missRes.status}:${missBody.slice(0, 100)}`;
+  } catch {
+    apiMissSignature = 'network-error';
+  }
+
+  for (const cand of API_AUTH_CANDIDATES) {
+    if (pathsToProbe.some(p => p.path === cand)) continue;
+    try {
+      const res = await resilientFetch(`${new URL(normalizedUrl).origin}${cand}`, {
+        method: 'OPTIONS',
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Strix-Pentest/2.0' },
+        redirect: 'manual',
+      });
+      const body = await res.text().catch(() => '');
+      const sig = `${res.status}:${body.slice(0, 100)}`;
+      if (sig !== apiMissSignature && res.status !== 404) {
+        pathsToProbe.push({ path: cand, desc: 'Probed API Authentication Handler' });
+      }
+    } catch {
+      // Network error: skip candidate
+    }
+  }
+
   const baseUrl = new URL(normalizedUrl).origin;
 
   // Concurrently probe paths
@@ -1111,7 +1252,12 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
   }
 
   // 4. Burp-style Request Interception, Intruder Payload Fuzzing, & Auth Bypass Analysis
-  for (const logEndpoint of reconData.loginEndpoints.slice(0, 2)) {
+  // Iterate all discovered login paths (not just the first two) and stop once
+  // two REAL credential handlers have been verified - HTML-only login pages
+  // are cheap to reject and must not crowd out the actual API handler.
+  let verifiedHandlers = 0;
+  for (const logEndpoint of reconData.loginEndpoints) {
+    if (verifiedHandlers >= 2) break;
     try {
       const fuzzDiagnosis = await fuzzLoginSecurity(baseUrl, logEndpoint.path, htmlBody);
       Object.assign(logEndpoint, fuzzDiagnosis);
@@ -1122,11 +1268,19 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
         reconData.exposedRisks.push(`SQL Error Leakage: ${logEndpoint.path} returned unhandled database syntax error in response.`);
       }
 
-      if (!fuzzDiagnosis.rateLimitDetected) {
-        reconData.exposedRisks.push(`Missing Rate Limiting on ${logEndpoint.path}: susceptible to automated password brute-force and Burp Intruder attacks.`);
-      }
-      if (!fuzzDiagnosis.hasCsrf) {
-        reconData.exposedRisks.push(`Missing Anti-CSRF Token: Login form on ${logEndpoint.path} does not declare CSRF protection.`);
+      // Only report auth weaknesses on paths that actually process credentials.
+      // A GET-only login page (405), a missing route (404) or a redirect-to-login
+      // (307) proves nothing about rate limiting or CSRF on the real API.
+      if (fuzzDiagnosis.endpointIsAuthHandler) {
+        verifiedHandlers++;
+        if (!fuzzDiagnosis.rateLimitDetected) {
+          reconData.exposedRisks.push(`Missing Rate Limiting on ${logEndpoint.path}: susceptible to automated password brute-force and Burp Intruder attacks.`);
+        }
+        if (!fuzzDiagnosis.hasCsrf && !fuzzDiagnosis.csrfOriginEnforced) {
+          reconData.exposedRisks.push(`Missing CSRF Protection on ${logEndpoint.path}: no anti-CSRF token and no Origin/Referer enforcement observed.`);
+        }
+      } else {
+        logEndpoint.note = `${logEndpoint.note || ''} (POST ${logEndpoint.path} bukan handler kredensial — rate-limit/CSRF tidak dievaluasi)`.trim();
       }
     } catch {
       // Continue if fuzzing request fails
@@ -1213,17 +1367,18 @@ export async function probeWebTarget(targetUrl, { onProgress } = {}) {
     const puppeteerResult = await auditWithPuppeteer(normalizedUrl);
     reconData.puppeteerAudit = puppeteerResult;
 
-    // Check if WebRTC leaked any computer/client IPs
+    // WebRTC STUN candidates disclose the BROWSER's own IP - i.e. the auditor's
+    // machine, not the target server. They are NOT origin exposure and cannot
+    // be used to bypass a WAF/CDN. Report as client-side info only.
     if (puppeteerResult.webrtcLeakedIps?.length > 0) {
-      for (const leakIp of puppeteerResult.webrtcLeakedIps) {
-        reconData.ipExposure.originIpLeaked = true;
-        const leakDesc = `WebRTC RTCPeerConnection STUN leak: Disclosed client/computer IP: ${leakIp}`;
-        if (!reconData.ipExposure.leakVectors.includes(leakDesc)) {
-          reconData.ipExposure.leakVectors.push(leakDesc);
-        }
+      const leakDesc = `WebRTC RTCPeerConnection STUN leak: client-side IP visible to browser scripts: ${puppeteerResult.webrtcLeakedIps.join(', ')}`;
+      if (!reconData.ipExposure.leakVectors.includes(leakDesc)) {
+        reconData.ipExposure.leakVectors.push(leakDesc);
       }
-      reconData.ipExposure.evidence = `WebRTC STUN candidate leak detected via Puppeteer browser execution. Computer IP (${puppeteerResult.webrtcLeakedIps.join(', ')}) is exposed to browser scripts.`;
-      reconData.exposedRisks.push(`WebRTC IP Leak: Client/Host IP ${puppeteerResult.webrtcLeakedIps[0]} exposed via RTCPeerConnection STUN candidate.`);
+      reconData.ipExposure.clientIpReflected = true;
+      reconData.ipExposure.clientIp = puppeteerResult.webrtcLeakedIps[0];
+      reconData.ipExposure.evidence = `Client-side WebRTC STUN candidate exposed the browsing client's own IP (${puppeteerResult.webrtcLeakedIps.join(', ')}). This is a browser/privacy leak, not server origin exposure - the target origin IP is not disclosed.`;
+      reconData.exposedRisks.push(`Info: Client-side IP disclosure via WebRTC STUN (${puppeteerResult.webrtcLeakedIps[0]}) — affects the visitor's privacy, not server origin exposure.`);
     }
 
     // Check if DOM media was discovered
@@ -2520,7 +2675,16 @@ export async function getSecureMediaUrl(fileKey, userSession) {
     }
 
     // 7. Server Origin IP Exposure & Network Leakage
-    if (reconData.ipExposure?.originIpLeaked && !rawVulns.some(v => v.title.toLowerCase().includes('origin ip') || v.title.toLowerCase().includes('ip address'))) {
+    // Only meaningful when a REAL origin IP (or internal subnet) leaked.
+    // A CDN edge IP in the DNS A record is public by definition and is not
+    // a bypass vector; x-forwarded-for is the client's own IP.
+    const detectedIp = reconData.ipExposure?.detectedServerIp || '';
+    const realLeakVectors = (reconData.ipExposure?.leakVectors || []).filter(v =>
+      !/client-side IP|WebRTC/i.test(v)
+    );
+    const hasRealOriginLeak = Boolean(reconData.ipExposure?.originIpLeaked) && realLeakVectors.length > 0;
+
+    if (hasRealOriginLeak && !rawVulns.some(v => v.title.toLowerCase().includes('origin ip') || v.title.toLowerCase().includes('ip address'))) {
       const hostVal = (() => { try { return new URL(target).hostname; } catch { return 'target'; } })();
       rawVulns.push({
         id: `STRIX-IP-LEAK-${Date.now().toString().slice(-4)}`,
@@ -2539,11 +2703,11 @@ export async function getSecureMediaUrl(fileKey, userSession) {
         description: `Reconnaissance diagnostics revealed that the server's public origin IP address or internal network subnet is exposed to external clients. ${reconData.ipExposure.evidence} Attackers knowing the real origin IP can send traffic directly to the host, completely bypassing Cloudflare, AWS CloudFront, or any upstream Web Application Firewall (WAF) and DDoS protection.`,
         evidence: reconData.ipExposure.evidence,
         impact: 'Attackers can bypass WAF filtering rules, exploit unpatched backend services directly, and execute direct volumetric DDoS attacks targeting origin bandwidth.',
-        technicalAnalysis: 'Backend server fails to strip internal tracking headers (e.g. X-Real-IP, X-Backend-Server) or the host network allows direct public connections without restricting traffic to CDN reverse proxies.',
+        technicalAnalysis: 'Backend server fails to strip internal tracking headers (e.g. X-Backend-Server, X-Origin-IP) or the host network allows direct public connections without restricting traffic to CDN reverse proxies.',
         pocDescription: 'Connect directly to the origin host IP using curl with Host header:',
-        pocScriptCode: `curl -k -i -H "Host: ${hostVal}" "http://${reconData.ipExposure.detectedServerIp || 'ORIGIN_IP'}/"`,
+        pocScriptCode: `curl -k -i -H "Host: ${hostVal}" "http://${detectedIp || 'ORIGIN_IP'}/"`,
         codeLocations: [],
-        remediation: '1. Configure host firewall (UFW, iptables, or AWS Security Group) to ONLY allow inbound connections on ports 80/443 from verified Cloudflare / CDN IP ranges.\n2. In Nginx/Apache reverse proxy, strip and suppress all internal backend headers:\n   proxy_hide_header X-Backend-Server;\n   proxy_hide_header X-Real-IP;\n3. Keep origin server IP confidential; rotate host IP address if it has been indexed publicly.',
+        remediation: '1. Configure host firewall (UFW, iptables, or AWS Security Group) to ONLY allow inbound connections on ports 80/443 from verified Cloudflare / CDN IP ranges.\n2. In Nginx/Apache reverse proxy, strip and suppress all internal backend headers:\n   proxy_hide_header X-Backend-Server;\n   proxy_hide_header X-Origin-IP;\n3. Keep origin server IP confidential; rotate host IP address if it has been indexed publicly.',
         remediationPatch: `# Nginx reverse proxy configuration:
 # 1. Hide origin headers:
 proxy_hide_header X-Powered-By;

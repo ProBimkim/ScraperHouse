@@ -62,6 +62,7 @@ function synthesizeStressAnalysis({
   totalCompleted,
   successfulCount,
   failedCount,
+  rejectedCount = 0,
   avgLatency,
   p50Latency,
   p95Latency,
@@ -189,6 +190,7 @@ export async function runServerStressTest({
   let completedCount = 0;
   let successfulCount = 0;
   let failedCount = 0;
+  let rejectedCount = 0; // 4xx (bukan 429): request ditolak dengan benar, bukan crash
 
   const statusCodes = {};
   const errorSamples = [];
@@ -221,8 +223,17 @@ export async function runServerStressTest({
     const codeKey = statusCode ? String(statusCode) : (errMessage || 'ERROR');
     statusCodes[codeKey] = (statusCodes[codeKey] || 0) + 1;
 
-    if (statusCode >= 200 && statusCode < 400) {
+    // 4xx (except 429) = client error (wrong method/path, bad auth, etc).
+    // It proves the server REJECTED the request correctly - not that it crashed.
+    // Counting those as failures is what produced fake "100% error rate /
+    // CRITICAL DoS" verdicts on endpoints that simply don't accept that method.
+    const isClientError = statusCode >= 400 && statusCode < 500 && statusCode !== 429;
+    const isSuccess = statusCode >= 200 && statusCode < 400;
+
+    if (isSuccess) {
       successfulCount++;
+    } else if (isClientError) {
+      rejectedCount++;
     } else {
       failedCount++;
       if (errorSamples.length < 15) {
@@ -432,6 +443,7 @@ export async function runServerStressTest({
     totalCompleted: completedCount,
     successfulCount,
     failedCount,
+    rejectedCount,
     avgLatency: finalAvgLatency,
     p50Latency,
     p95Latency,
@@ -452,6 +464,7 @@ export async function runServerStressTest({
     completedTotal: completedCount,
     successfulCount,
     failedCount,
+    rejectedCount,
     durationSec,
     avgRps: overallAvgRps,
     maxRps: maxObservedRps || overallAvgRps,
@@ -626,25 +639,38 @@ export async function runVulnerabilityStressCooperation({
     const baselineLat = baselineResult.latency?.avg || 100;
     const epLat = epResult.latency?.avg || 100;
     const latencyMultiplier = Number((epLat / Math.max(baselineLat, 1)).toFixed(2));
+    // Error rate = server-side failures only (5xx / timeouts / connection reset).
+    // 4xx means the server correctly rejected the request, not that it broke.
     const epErrorRate = Number(((epResult.failedCount / Math.max(epResult.completedTotal || requestsPerTarget, 1)) * 100).toFixed(1));
     const baselineErrorRate = Number(((baselineResult.failedCount / Math.max(baselineResult.completedTotal || requestsPerTarget, 1)) * 100).toFixed(1));
+
+    // Server-side failure count: exclude pure client rejections (405 on a GET-only
+    // page, 401 on a protected route, 404 for a missing path). Those are the
+    // server working as intended, not evidence of a crash under load.
+    const epServerFailures = Object.entries(epResult.statusCodes || {})
+      .filter(([code]) => {
+        const n = Number(code);
+        return !Number.isNaN(n) && (n >= 500 || n === 0);
+      })
+      .reduce((sum, [, count]) => sum + count, 0);
+    const epServerFailureRate = Number(((epServerFailures / Math.max(epResult.completedTotal || requestsPerTarget, 1)) * 100).toFixed(1));
 
     let dosVulnerabilityRisk = 'LOW';
     let impactDescription = '';
 
-    if (epErrorRate >= 35 || latencyMultiplier >= 3.5) {
+    if (epServerFailureRate >= 35 || latencyMultiplier >= 3.5) {
       dosVulnerabilityRisk = 'CRITICAL';
-      if (latencyMultiplier >= 2.0 && epErrorRate >= 20) {
-        impactDescription = `Sangat Berbahaya (Critical DoS Vector). Menembakkan beban pada endpoint celah ini menyebabkan lonjakan respon ${latencyMultiplier}x lipat lebih lambat dibandingkan web utama, dengan tingkat kegagalan ${epErrorRate}%. Celah ini rentan dieksploitasi untuk melumpuhkan server (Asymmetric Denial of Service).`;
+      if (latencyMultiplier >= 2.0 && epServerFailureRate >= 20) {
+        impactDescription = `Sangat Berbahaya (Critical DoS Vector). Menembakkan beban pada endpoint celah ini menyebabkan lonjakan respon ${latencyMultiplier}x lipat lebih lambat dibandingkan web utama, dengan tingkat kegagalan server ${epServerFailureRate}%. Celah ini rentan dieksploitasi untuk melumpuhkan server (Asymmetric Denial of Service).`;
       } else if (latencyMultiplier >= 2.0) {
         impactDescription = `Sangat Berbahaya (Severe Latency Spike). Menembakkan beban pada endpoint celah ini menyebabkan server merespon ${latencyMultiplier}x lipat lebih lambat dibandingkan web utama. Berpotensi menguras pool worker backend.`;
       } else {
-        impactDescription = `Sangat Berbahaya (High Failure Rate). Endpoint celah menghasilkan tingkat error ${epErrorRate}% di bawah beban trafik, mengindikasikan server gagal menangani request concurrent pada jalur ini (Crash / Connection Timeout).`;
+        impactDescription = `Sangat Berbahaya (High Failure Rate). Endpoint celah menghasilkan tingkat kegagalan server ${epServerFailureRate}% (HTTP 5xx / timeout) di bawah beban trafik, mengindikasikan server gagal menangani request concurrent pada jalur ini (Crash / Connection Timeout).`;
       }
-    } else if (epErrorRate >= 15 || latencyMultiplier >= 2.0) {
+    } else if (epServerFailureRate >= 15 || latencyMultiplier >= 2.0) {
       dosVulnerabilityRisk = 'HIGH';
-      impactDescription = `Beban Tinggi (High Resource Consumption). Respon ${latencyMultiplier}x lebih lambat atau error rate ${epErrorRate}%. Lonjakan trafik pada celah ini dapat menguras connection pool database atau CPU server.`;
-    } else if (latencyMultiplier >= 1.3 || epErrorRate > baselineErrorRate) {
+      impactDescription = `Beban Tinggi (High Resource Consumption). Respon ${latencyMultiplier}x lebih lambat atau tingkat kegagalan server ${epServerFailureRate}%. Lonjakan trafik pada celah ini dapat menguras connection pool database atau CPU server.`;
+    } else if (latencyMultiplier >= 1.3 || epServerFailureRate > baselineErrorRate) {
       dosVulnerabilityRisk = 'MODERATE';
       impactDescription = `Degradasi Sedang. Endpoint celah memiliki latensi ${latencyMultiplier}x lipat dari halaman utama (${epLat}ms vs ${baselineLat}ms) saat dibebani trafik bersamaan.`;
     } else {
@@ -658,6 +684,8 @@ export async function runVulnerabilityStressCooperation({
         completedTotal: epResult.completedTotal || requestsPerTarget,
         successfulCount: epResult.successfulCount || 0,
         failedCount: epResult.failedCount || 0,
+        rejectedCount: epResult.rejectedCount || 0,
+        serverFailureRate: epServerFailureRate,
         avgRps: epResult.avgRps || 0,
         latency: epResult.latency || { avg: 0, min: 0, max: 0, p95: 0 },
         statusCodes: epResult.statusCodes || {},
@@ -668,6 +696,7 @@ export async function runVulnerabilityStressCooperation({
         latencyMultiplier,
         baselineErrorRate,
         vulnerableErrorRate: epErrorRate,
+        serverFailureRate: epServerFailureRate,
         dosVulnerabilityRisk,
         impactDescription,
       }
