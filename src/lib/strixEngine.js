@@ -358,12 +358,23 @@ export const GROQ_FALLBACK_MODELS = [
 /**
  * Calls OpenRouter Chat Completion API (Primary: minimax/minimax-m3.1-flash:free).
  */
-export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL, maxTokens = 8192, openrouterApiKey = null }) {
+export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL, maxTokens = null, openrouterApiKey = null }) {
   const effectiveKey = (openrouterApiKey && typeof openrouterApiKey === 'string' ? openrouterApiKey.trim() : '')
     || process.env.OPENROUTER_API_KEY;
 
   if (!effectiveKey) {
     throw new Error('OpenRouter API key is not configured. Please set OPENROUTER_API_KEY in .env.local or provide it in scan settings.');
+  }
+
+  const payload = {
+    model,
+    messages,
+    reasoning: { effort: 'high' },
+    response_format: { type: 'json_object' },
+    temperature: 0.2,
+  };
+  if (typeof maxTokens === 'number' && maxTokens > 0) {
+    payload.max_tokens = maxTokens;
   }
 
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -374,14 +385,7 @@ export async function callOpenRouterCompletion({ messages, model = PRIMARY_MODEL
       'HTTP-Referer': 'https://github.com/ProBimkim/ScraperHouse',
       'X-Title': 'Strix Autonomous Security Pentest Engine',
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      reasoning: { effort: 'high' },
-      response_format: { type: 'json_object' },
-      max_tokens: maxTokens,
-      temperature: 0.2,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -2008,7 +2012,6 @@ export async function runStrixPentest({
         { role: 'user', content: userPrompt }
       ],
       model: PRIMARY_MODEL,
-      maxTokens: 8192,
       openrouterApiKey,
     });
 
@@ -2034,7 +2037,6 @@ export async function runStrixPentest({
             { role: 'user', content: userPrompt }
           ],
           model: orModel,
-          maxTokens: 8192,
           openrouterApiKey,
         });
 

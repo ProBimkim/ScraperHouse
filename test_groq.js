@@ -47,7 +47,6 @@ async function testDualAI() {
           messages: [{ role: 'system', content: sys }, { role: 'user', content: q }],
           reasoning: { effort: 'high' },
           response_format: { type: 'json_object' },
-          max_tokens: 8192,
           temperature: 0.1,
         }),
       });

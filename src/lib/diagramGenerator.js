@@ -37,7 +37,6 @@ export async function createOpenRouterDiagramStream({ prompt, model = PRIMARY_DI
       messages: [{ role: 'user', content: prompt }],
       reasoning: { effort: 'high' },
       temperature: 0.2,
-      max_tokens: 8192,
       stream: true,
     }),
   });

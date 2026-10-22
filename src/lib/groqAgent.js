@@ -72,7 +72,6 @@ Format:
           reasoning: { effort: 'high' },
           response_format: { type: 'json_object' },
           temperature: 0.1,
-          max_tokens: 8192,
         }),
       });
 
